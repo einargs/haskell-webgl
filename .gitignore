@@ -2,6 +2,5 @@ dist/
 *.o
 *.hi
 *.h
-Main_ffi.js
-Main.wasm
+hs-artifacts/
 node_modules/

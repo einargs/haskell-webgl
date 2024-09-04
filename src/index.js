@@ -9,8 +9,6 @@ function configureWASI() {
       ConsoleStdout.lineBuffered(msg => console.log(`[WASI stdout] ${msg}`)),
       ConsoleStdout.lineBuffered(msg => console.warn(`[WASI stderr] ${msg}`)),
       new PreopenDirectory(".", [
-          ["example.c", new File(new TextEncoder("utf-8").encode(`#include "a"`))],
-          ["hello.rs", new File(new TextEncoder("utf-8").encode(`fn main() { println!("Hello World!"); }`))],
       ]),
   ];
   return new WASI(args, env, fds);
@@ -25,7 +23,7 @@ async function run() {
   // and give it the exports from the GHC module.
   let __exports = {};
   let module = await WebAssembly.instantiateStreaming(fetch("./Main.wasm"), {
-    ghc_wasm_jsffi: (await import("./Main_ffi.js")).default(__exports),
+    ghc_wasm_jsffi: (await import("@hs-artifacts/Main_ffi.js")).default(__exports),
     "wasi_snapshot_preview1": wasi.wasiImport,
   });
 

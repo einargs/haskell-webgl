@@ -1,11 +1,12 @@
 module Main (myMain, main) where
+import GHC.Wasm.Prim
 
-foreign import javascript unsafe "console.log('test ' + $1)"
-  js_test :: Int -> IO ()
+foreign import javascript unsafe "console.log($1)"
+  js_log :: JSString -> IO ()
 foreign export ccall myMain :: IO ()
+
 myMain :: IO ()
 myMain = do
-  js_test 10
+  js_log (toJSString "hey")
 
-main :: IO ()
-main = js_test 10
+main = error "not used"
