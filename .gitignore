@@ -1,0 +1,7 @@
+dist/
+*.o
+*.hi
+*.h
+Main_ffi.js
+Main.wasm
+node_modules/
