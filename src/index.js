@@ -1,4 +1,5 @@
 import { WASI, File, OpenFile, ConsoleStdout, PreopenDirectory } from "@bjorn3/browser_wasi_shim";
+import "./styles.css";
 
 function configureWASI() {
   

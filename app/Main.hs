@@ -12,8 +12,8 @@ foreign export ccall myMain :: IO ()
 
 myMain :: IO ()
 myMain = do
-  js_log (toJSString "hey")
-  body <- getBody
-  setInnerText body $ toJSString "hello world"
+  js_log (toJSString "thing7")
+  --body <- getBody
+  -- setInnerText body $ toJSString "hello world"
 
 main = error "not used"

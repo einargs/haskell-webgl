@@ -22,6 +22,10 @@
         #wasm-ghc.wasm32-wasi-ghc-9_10
         # wasm-ghc.wasm32-wasi-cabal-9_10
       ];
+      WASM_CABAL = "${wasm-ghc.wasm32-wasi-cabal-gmp}/bin/wasm32-wasi-cabal";
+      shellHook = ''
+        export POST_LINK=$(wasm32-wasi-ghc --print-libdir)/post-link.mjs
+      '';
     };
   }
   );
