@@ -1,20 +1,29 @@
-const path = require('path');
-const HtmlWebpackPlugin = require('html-webpack-plugin');
-const webpack = require('webpack');
-const CopyPlugin = require("copy-webpack-plugin");
-const HaskellPlugin = require("./haskell-plugin.js");
+import * as path from 'path';
+import HtmlWebpackPlugin from 'html-webpack-plugin';
+import webpack from 'webpack';
+const { IgnorePlugin } = webpack;
+import CopyPlugin from "copy-webpack-plugin";
+import HaskellPlugin from "./haskell-plugin.ts";
 
 // path to where cabal puts the wasm.
-const WASM_PATH="dist-newstyle/build/wasm32-wasi/ghc-9.11.20240828/haskell-webgl-0.1.0.0/x/haskell-webgl/opt/build/haskell-webgl/haskell-webgl.wasm";
+const WASM_PATH = "dist-newstyle/build/wasm32-wasi/ghc-9.11.20240828/haskell-webgl-0.1.0.0/x/haskell-webgl/opt/build/haskell-webgl/haskell-webgl.wasm";
 
-module.exports = {
+export default {
   entry: "./src/index.js",
   output: {
-    path: path.resolve(__dirname, './dist'),
+    path: path.resolve('./dist'),
     filename: 'bundle.js',
   },
-   module: {
+  module: {
     rules: [
+      /*{
+        test: /.ffi.js/,
+        use: [
+          {
+            loader: path.resolve('./ffi-loader.js'),
+          }
+        ]
+      },*/
       {
         test: /\.tsx?$/,
         use: 'ts-loader',
@@ -32,13 +41,11 @@ module.exports = {
       // Point to the correct location of Main_ffi.js because
       // IgnorePlugin being weird and annoying.
       // See: https://github.com/webpack/webpack/issues/2858
-      '@hs-artifacts': path.join(__dirname, "./hs-artifacts"),
-      //'./Main_ffi.js$': path.join(__dirname, "hs-artifacts/Main_ffi.js"),
-      //'./Main.wasm$': path.join(__dirname, "hs-artifacts/Main.wasm"),
+      //'@hs-artifacts': path.resolve("./hs-artifacts"),
     }
   },
   experiments: {
-    asyncWebAssembly: true,
+    //asyncWebAssembly: true,
     //syncWebAssembly: true
   },
   devServer: {
@@ -60,7 +67,7 @@ module.exports = {
     // replacing it with something that throws a webpack error,
     // but that's fine because it figures out that it isn't in
     // deno by having an error thrown there anyway.
-    new webpack.IgnorePlugin({ resourceRegExp: /node:timers/ }),
+    new IgnorePlugin({ resourceRegExp: /node:timers/ }),
     // We load wasm using fetch, so we have to just copy the raw
     // wasm file into our output directory.
     /*new CopyPlugin({
@@ -72,7 +79,7 @@ module.exports = {
       cabalFile: "haskell-webgl.cabal",
       haskellDir: "app",
       debugMode: true,
-      wasmPath: path.join(__dirname, WASM_PATH)
+      wasmPath: path.resolve(WASM_PATH)
     })
-  ]
+  ],
 };

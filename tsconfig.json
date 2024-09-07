@@ -1,10 +1,38 @@
 {
   "compilerOptions": {
-    "outDir": "./dist/",
-    "noImplicitAny": true,
-    "module": "es6",
-    "target": "es5",
+    "baseUrl": ".",
+    "moduleResolution": "node",
     "allowJs": true,
-    "moduleResolution": "node"
-  }
+    "checkJs": true,
+    "target": "ESNext",
+    "module": "ESNext",
+    "strictNullChecks": true,
+    "resolveJsonModule": true,
+    "allowImportingTsExtensions": true,
+    "allowSyntheticDefaultImports": true
+  },
+  "ts-node": {
+    // In order to allow us to import the post link file from GHC,
+    // we have to run the webpack configuration with es modules.
+    // That means we need to configure ts-node to transpile to
+    // esmodules, which means we need to tell node to use
+    // ts-node/esm as the loader, since while webpack can use
+    // it to compile to cjs it can't use it to compile to mjs
+    // for some reason. This is done via the NODE_OPTIONS parameter
+    // passed to webpack inside the build script.
+    // https://www.npmjs.com/package/ts-node#native-ecmascript-modules
+    //
+    // We also had to turn off transpile because of some type errors
+    // inside of mjs.
+    "transpileOnly": true,
+    "esm": true,
+    "compilerOptions": {
+
+      "module": "ESNext",
+      "target": "ESNext",
+      //"esModuleInterop": true,
+      "allowSyntheticDefaultImports": true
+    }
+  },
+  "exclude": ["node_modules"]
 }

@@ -23,8 +23,8 @@ async function run() {
   // javascript file that implements the FFI calls, and then need to load that
   // and give it the exports from the GHC module.
   let __exports = {};
-  let module = await WebAssembly.instantiateStreaming(fetch("./Main.wasm"), {
-    ghc_wasm_jsffi: (await import("@hs-artifacts/Main_ffi.js")).default(__exports),
+  let module = await WebAssembly.instantiateStreaming(fetch("./haskell.wasm"), {
+    ghc_wasm_jsffi: (await import("./haskell.ffi.js")).default(__exports),
     "wasi_snapshot_preview1": wasi.wasiImport,
   });
 
