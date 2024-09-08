@@ -30,7 +30,7 @@
 
       "module": "ESNext",
       "target": "ESNext",
-      //"esModuleInterop": true,
+      "esModuleInterop": true,
       "allowSyntheticDefaultImports": true
     }
   },

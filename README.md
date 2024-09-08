@@ -17,7 +17,41 @@ See:
 Use the nix package manager to install all the dependencies needed; just run
 `nix develop` once flakes are enabled.
 
-## Run
-Use `./compile.sh` to compile the haskell code, and `npm run serve`
-to run a hot module reloading system, and `npm run build` to build it for
-deployment somewhere.
+## Hot Module Reloading with Haskell
+To setup fully functioning hot module reloading I would need
+to setup a way to tear down the wasm reactor and replace it. That should
+actually be quite possible, but it'd be more dev time and I'm not sure it'd be
+worth it? Since the haskell code itself isn't split up to make it useful. I'd
+have to investigate exactly how powerful HMR is.
+
+Instead at the end I guess I'm just going to force a reload every time.
+
+### wasm-hmr-loader.ts
+This was an experiment in keeping HMR for everything except
+the haskell code, and forcing a full reload for that.
+It's run into the problem that if I register a loader for
+haskell/haskell.wasm, the contents then conflict. But the
+hot module reload tech throws an error if I don't have
+a loader for it. And loaders are supposed to return javascript.
+
+I suppose it makes sense that for HMR you would want to follow
+webpack's style of packaging everything as javascript, and then
+for production use a different method.
+```typescript
+import { Buffer } from 'node:buffer';
+import { RawLoaderDefinition } from 'webpack';
+import path from 'path';
+
+// takes a buffer
+const wasmHMRLoader: RawLoaderDefinition = function(source: Buffer) {
+  console.log("wasmHMRLoader.resourcePath", this.resourcePath);
+  this.callback(null, `
+if (import.meta.webpackHot) {
+  console.info("Can't yet do hot module reloading for haskell code");
+  import.meta.webpackHot.decline();
+}
+  `);
+}
+wasmHMRLoader.raw = true;
+export default wasmHMRLoader;
+```

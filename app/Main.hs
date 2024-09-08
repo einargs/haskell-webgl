@@ -12,7 +12,7 @@ foreign export ccall myMain :: IO ()
 
 myMain :: IO ()
 myMain = do
-  js_log (toJSString "thing9")
+  js_log (toJSString "thing20")
   --body <- getBody
   -- setInnerText body $ toJSString "hello world"
 

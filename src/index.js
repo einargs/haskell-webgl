@@ -9,8 +9,8 @@ function configureWASI() {
       new OpenFile(new File([])), // stdin
       ConsoleStdout.lineBuffered(msg => console.log(`[WASI stdout] ${msg}`)),
       ConsoleStdout.lineBuffered(msg => console.warn(`[WASI stderr] ${msg}`)),
-      new PreopenDirectory(".", [
-      ]),
+      /*new PreopenDirectory(".", [
+      ]),*/
   ];
   return new WASI(args, env, fds);
 }
@@ -23,11 +23,15 @@ async function run() {
   // javascript file that implements the FFI calls, and then need to load that
   // and give it the exports from the GHC module.
   let __exports = {};
-  let module = await WebAssembly.instantiateStreaming(fetch("./haskell.wasm"), {
-    ghc_wasm_jsffi: (await import("./haskell.ffi.js")).default(__exports),
+  let req = fetch("/haskell/haskell.wasm")
+    .catch(console.error);
+  let module = await WebAssembly.instantiateStreaming(req, {
+    // @ts-expect-error
+    ghc_wasm_jsffi: (await import("../haskell/haskell.ffi.js")).default(__exports),
     "wasi_snapshot_preview1": wasi.wasiImport,
   });
 
+  // @ts-expect-error
   wasi.initialize(module.instance);
   Object.assign(__exports, module.instance.exports);
 
@@ -36,3 +40,6 @@ async function run() {
   console.log("Success!");
 }
 run();
+if (import.meta.webpackHot) {
+  console.log(import.meta.webpackHot);
+}

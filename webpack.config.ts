@@ -1,5 +1,6 @@
 import * as path from 'path';
 import HtmlWebpackPlugin from 'html-webpack-plugin';
+import HtmlWebpackInjectPreload from '@principalstudio/html-webpack-inject-preload';
 import webpack from 'webpack';
 const { IgnorePlugin } = webpack;
 import CopyPlugin from "copy-webpack-plugin";
@@ -16,14 +17,14 @@ export default {
   },
   module: {
     rules: [
-      /*{
-        test: /.ffi.js/,
+      {
+        test: /\.ffi.js/,
         use: [
           {
-            loader: path.resolve('./ffi-loader.js'),
+            loader: path.resolve('./ffi-loader.ts'),
           }
         ]
-      },*/
+      },
       {
         test: /\.tsx?$/,
         use: 'ts-loader',
@@ -45,7 +46,7 @@ export default {
     }
   },
   experiments: {
-    //asyncWebAssembly: true,
+    asyncWebAssembly: true,
     //syncWebAssembly: true
   },
   devServer: {
@@ -61,24 +62,17 @@ export default {
       title: "Haskell WebGL",
       template: "./src/index.html"
     }),
-    // In the Main_ffi file it imports node:timers for the deno
+    // In the haskell.ffi.js file it imports node:timers for the deno
     // implementation. However, webpack will see that and panic,
     // so we have to tell it to ignore that. I think it ends up
     // replacing it with something that throws a webpack error,
     // but that's fine because it figures out that it isn't in
     // deno by having an error thrown there anyway.
     new IgnorePlugin({ resourceRegExp: /node:timers/ }),
-    // We load wasm using fetch, so we have to just copy the raw
-    // wasm file into our output directory.
-    /*new CopyPlugin({
-      patterns: [{
-        from: path.join(__dirname, "./hs-artifacts/Main.wasm")
-      }]
-    }),*/
     new HaskellPlugin({
       cabalFile: "haskell-webgl.cabal",
       haskellDir: "app",
-      debugMode: true,
+      debugMode: false,
       wasmPath: path.resolve(WASM_PATH)
     })
   ],

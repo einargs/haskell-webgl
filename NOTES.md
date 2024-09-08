@@ -4,34 +4,62 @@ Haskell wasm output to
 dist-newstyle/build/wasm32-wasi/ghc-9.11.20240828/haskell-webgl-0.1.0.0/x/haskell-webgl/opt/build/haskell-webgl/haskell-webgl.wasm
 
 # Webpack Notes
-## Using jsconfig.json to get type info from JSDoc comments
 
-## NormalModuleFactory.create
-concrete implementation of ModuleFactory.create
+## Current Plan
+The current plan is to avoid needing to mess with the filesystem
+by intercepting calls using resolve hooks on NormalModuleFactory.
+
+I'll use `beforeResolve`, and return the `ResolveData` interface.
+
+If that doesn't work, I'll create a fake file system that that I
+tell the created module to use during resolution.
+
+I will use the dependencies to indicate that a 
+
+## With VirtualModulesPlugin
+Well, I have the files being generated. But there's still no dependency
+on the wasm file. So I think I can make one by hooking into the
+beforeModule or other hooks.
+
+I'm going to hook into `createModule` and modify the module before then
+creating it.
+
+
+## Future
+Eventually I want to create a generated file that depends on the
+ffi and the wasm file, and which handles calling instantiateStreaming
+itself.
+
+
+# Useful Webpack Interfaces
 ```
-	 * @param {ModuleFactoryCreateData} data data object
-	 * @param {function((Error | null)=, ModuleFactoryResult=): void} callback callback
-	 * @returns {void}
+declare interface ModuleFactoryCreateData {
+	contextInfo: ModuleFactoryCreateDataContextInfo;
+	resolveOptions?: ResolveOptions;
+	context: string;
+	dependencies: Dependency[];
+}
+declare interface ModuleFactoryCreateDataContextInfo {
+	issuer: string;
+	issuerLayer?: null | string;
+	compiler: string;
+}
+declare interface ResolveData {
+	contextInfo: ModuleFactoryCreateDataContextInfo;
+	resolveOptions?: ResolveOptions;
+	context: string;
+	request: string;
+	assertions?: Record<string, any>;
+	dependencies: ModuleDependency[];
+	dependencyType: string;
+	createData: Partial<NormalModuleCreateData & { settings: ModuleSettings }>;
+	fileDependencies: LazySet<string>;
+	missingDependencies: LazySet<string>;
+	contextDependencies: LazySet<string>;
+
+	/**
+	 * allow to use the unsafe cache
 	 */
-	create(data, callback)
-```
-
-```
- * @typedef {object} ModuleFactoryResult
- * @property {Module=} module the created module or unset if no module was created
- * @property {Set<string>=} fileDependencies
- * @property {Set<string>=} contextDependencies
- * @property {Set<string>=} missingDependencies
- * @property {boolean=} cacheable allow to use the unsafe cache
-
- * @typedef {object} ModuleFactoryCreateDataContextInfo
- * @property {string} issuer
- * @property {string | null=} issuerLayer
- * @property {string} compiler
-
- * @typedef {object} ModuleFactoryCreateData
- * @property {ModuleFactoryCreateDataContextInfo} contextInfo
- * @property {ResolveOptions=} resolveOptions
- * @property {string} context
- * @property {Dependency[]} dependencies
+	cacheable: boolean;
+}
 ```

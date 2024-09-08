@@ -3,17 +3,22 @@ import Watchpack from 'watchpack';
 import { spawn } from 'node:child_process';
 import * as fs from 'node:fs/promises';
 import { Buffer } from 'node:buffer';
-import webpack, { Compiler, Compilation } from 'webpack';
-const postLinkModule = await import(process.env["POST_LINK"] as string);
+import webpack, { Compiler, Compilation, ResolveData } from 'webpack';
+const { NormalModule } = webpack;
+const { postLink }= await import(process.env["POST_LINK"] as string);
+import VirtualModulesPlugin from 'webpack-virtual-modules';
+
+import { buildFFILoader } from './ffi-loader.ts';
 
 type CompilationParams = Compilation['params'];
 type NormalModuleFactory = CompilationParams['normalModuleFactory'];
 type ModuleFactoryCreateData = Parameters<NormalModuleFactory['create']>[0];
 type ModuleFactoryResult = NonNullable<Parameters<Parameters<NormalModuleFactory['create']>[1]>[1]>;
+type Module = Parameters<typeof webpack.util.comparators.compareModulesByIdentifier>[0];
+type ResolveCreateData = ResolveData['createData'];
 
 // Taken from the POST_LINK file that GHC provides.
 async function produceFFI(wasmFileSource: Buffer) {
-  const { postLink } = postLinkModule;
   return await postLink(await WebAssembly.compile(wasmFileSource));
 }
 
@@ -45,8 +50,10 @@ export default class HaskellPlugin {
   cabalPath: string;
   hasSetup: boolean;
   wasmContent: Buffer | undefined;
-  compiling: Promise<void>;
-  wp: Watchpack;
+  compiling: Promise<void> = Promise.resolve();
+  virtualModulesPlugin = new VirtualModulesPlugin();
+  wp: Watchpack = new Watchpack({
+  });
   constructor({ cabalFile, haskellDir, debugMode, wasmPath }: {
     cabalFile: string,
     haskellDir: string,
@@ -58,13 +65,11 @@ export default class HaskellPlugin {
     this.cabalPath = process.env["WASM_CABAL"] as string;
     this.hasSetup = false;
     this.debugMode = debugMode;
-    this.compiling = Promise.resolve();
     this.wasmPath = wasmPath;
-    this.wp = new Watchpack({
-    });
   }
 
   apply(compiler: Compiler) {
+    this.virtualModulesPlugin.apply(compiler);
     const pluginName = HaskellPlugin.name;
     const logger = compiler.getInfrastructureLogger(pluginName);
     const { RawSource } = compiler.webpack.sources;
@@ -106,21 +111,30 @@ export default class HaskellPlugin {
       });
       return this.compiling;
     });
+
     compiler.hooks.compilation.tap(pluginName, (compilation) => {
+      compilation.hooks.finishModules.tapPromise(this.constructor.name, async (
+        modules
+      ) => {
+        for (let module of modules) {
+          if (module instanceof NormalModule && module.userRequest == path.resolve("./haskell/haskell.ffi.js")) {
+            //console.info("ffi module", module);
+            //console.info("ffi dependencies", module.dependencies);
+          }
+        }
+      });
       compilation.hooks.processAssets.tapPromise(pluginName, async () => {
         let updateOrEmit = (name, source) => {
           let exists = compilation.getAsset(name);
           if (exists) {
+            console.info(name, "already existed");
             compilation.updateAsset(source, name);
           } else {
             compilation.emitAsset(source, name);
           }
         };
-        console.info(this.wasmContent?.constructor);
-        updateOrEmit(
-          "haskell.wasm",
-          new RawSource(this.wasmContent as Buffer)
-        );
+        let source = new RawSource(this.wasmContent as Buffer);
+        compilation.emitAsset("haskell/haskell.wasm", source);
       });
     });
   }
@@ -148,7 +162,49 @@ export default class HaskellPlugin {
     let wasmContents = await fs.readFile(this.wasmPath);
     this.wasmContent = wasmContents;
     let ffiContents = await produceFFI(wasmContents);
-    let ffiFileName = "haskell.ffi.js";
+    // TODO: I could probably create a virutal context for these?
+    let ffiFileName = "haskell/haskell.ffi.js";
+    let ffiPath = path.resolve(ffiFileName);
+    let wasmFileName = "haskell/haskell.wasm";
+    let wasmPath = path.resolve(wasmFileName);
+    this.virtualModulesPlugin.writeModule(ffiFileName, ffiContents);
+    // I'm hoping this will work despite the plugin being written to use
+    // a string instead of a buffer.
+    this.virtualModulesPlugin.writeModule(wasmFileName, wasmContents as any);
+    normalModuleFactory.hooks.createModule.tapPromise(
+      this.constructor.name,
+      async (
+      createData: ResolveCreateData,
+      resolveData: ResolveData
+    ): Promise<void | Module> => {
+      if (createData.request == path.resolve(ffiFileName)) {
+        console.log("FFI Module loaders:", createData.loaders);
+        console.log("FFI Module encountered, adding dependency", resolveData);
+        /*createData?.loaders?.push?.(buildFFILoader(
+          ffiPath, wasmPath
+        ));*/
+        /*
+        resolveData.dependencies.push(
+          new webpack.dependencies.ModuleDependency("./haskell.wasm")
+        );*/
+      }
+      if (createData.request == path.resolve(wasmFileName)) {
+        if (!resolveData?.createData?.settings?.type?.includes?.("wasm")) {
+          console.error("The type of this module was not wasm");
+          console.log(resolveData);
+        }
+        console.log("wasm module createData:");
+      }
+      /*await createModule(normalModuleFactory, {
+      context: "", // will default to the factory context 
+      dependencies: [
+        new webpack.dependencies.ModuleDependency("./haskell.ffi.js"),
+        new webpack.dependencies.ModuleDependency("./haskell.wasm")
+      ]
+    });*/
+
+    });
+    /*
     let result = await createModule(normalModuleFactory, {
       contextInfo: {
         issuer: HaskellPlugin.constructor.name,
@@ -159,10 +215,12 @@ export default class HaskellPlugin {
       },
       context: "", // will default to the factory context 
       dependencies: [
-        //new webpack.dependencies.ModuleDependency("./haskell.wasm")
+        new webpack.dependencies.ModuleDependency("./haskell.ffi.js"),
+        new webpack.dependencies.ModuleDependency("./haskell.wasm")
       ]
     });
     console.log("new", result);
+    */
   }
 
   async _buildHaskellCode(debug, normalModuleFactory: NormalModuleFactory): Promise<void> {
