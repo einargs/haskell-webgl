@@ -1,12 +1,6 @@
-Useful blog post: https://finley.dev/blog/2024-08-24-ghc-wasm.html
-
-Haskell wasm output to
-dist-newstyle/build/wasm32-wasi/ghc-9.11.20240828/haskell-webgl-0.1.0.0/x/haskell-webgl/opt/build/haskell-webgl/haskell-webgl.wasm
-
 # Webpack Notes
-
-## Current Plan
-The current plan is to avoid needing to mess with the filesystem
+## Adjusting 
+The idea is to avoid needing to mess with the filesystem
 by intercepting calls using resolve hooks on NormalModuleFactory.
 
 I'll use `beforeResolve`, and return the `ResolveData` interface.
@@ -14,7 +8,8 @@ I'll use `beforeResolve`, and return the `ResolveData` interface.
 If that doesn't work, I'll create a fake file system that that I
 tell the created module to use during resolution.
 
-I will use the dependencies to indicate that a 
+I ended up using VirtualModulesPlugin, because they already had
+all of the bullshit written.
 
 ## With VirtualModulesPlugin
 Well, I have the files being generated. But there's still no dependency
@@ -29,6 +24,13 @@ creating it.
 Eventually I want to create a generated file that depends on the
 ffi and the wasm file, and which handles calling instantiateStreaming
 itself.
+
+## Checkout Compilation.createModuleAssets
+It references a `module.buildInfo.assets` property. Could I use that
+to include the wasm asset more neatly?
+
+Is this failing to happen automatically because I have no loader for
+the wasm when I indicate the dependency in the ffi loader?
 
 
 # Useful Webpack Interfaces

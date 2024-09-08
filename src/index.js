@@ -41,5 +41,6 @@ async function run() {
 }
 run();
 if (import.meta.webpackHot) {
+  import.meta.webpackHot.decline('/haskell/haskell.wasm');
   console.log(import.meta.webpackHot);
 }

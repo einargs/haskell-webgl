@@ -112,7 +112,8 @@ export default class HaskellPlugin {
       return this.compiling;
     });
 
-    compiler.hooks.compilation.tap(pluginName, (compilation) => {
+    compiler.hooks.thisCompilation.tap(pluginName, (compilation) => {
+      /* access information about the finished ffi module
       compilation.hooks.finishModules.tapPromise(this.constructor.name, async (
         modules
       ) => {
@@ -123,18 +124,19 @@ export default class HaskellPlugin {
           }
         }
       });
+      */
       compilation.hooks.processAssets.tapPromise(pluginName, async () => {
-        let updateOrEmit = (name, source) => {
-          let exists = compilation.getAsset(name);
-          if (exists) {
-            console.info(name, "already existed");
-            compilation.updateAsset(source, name);
-          } else {
-            compilation.emitAsset(source, name);
-          }
-        };
+        let wasmName = "haskell/haskell.wasm";
+        let exists = compilation.getAsset(wasmName);
+        console.info("WASM FILE exists=",exists);
         let source = new RawSource(this.wasmContent as Buffer);
-        compilation.emitAsset("haskell/haskell.wasm", source);
+        if (exists) {
+          console.log("update wasm asset");
+          compilation.updateAsset(wasmName, source);
+        } else {
+          console.log("emit wasm asset");
+          compilation.emitAsset(wasmName, source);
+        }
       });
     });
   }
@@ -180,13 +182,6 @@ export default class HaskellPlugin {
       if (createData.request == path.resolve(ffiFileName)) {
         console.log("FFI Module loaders:", createData.loaders);
         console.log("FFI Module encountered, adding dependency", resolveData);
-        /*createData?.loaders?.push?.(buildFFILoader(
-          ffiPath, wasmPath
-        ));*/
-        /*
-        resolveData.dependencies.push(
-          new webpack.dependencies.ModuleDependency("./haskell.wasm")
-        );*/
       }
       if (createData.request == path.resolve(wasmFileName)) {
         if (!resolveData?.createData?.settings?.type?.includes?.("wasm")) {
@@ -195,32 +190,7 @@ export default class HaskellPlugin {
         }
         console.log("wasm module createData:");
       }
-      /*await createModule(normalModuleFactory, {
-      context: "", // will default to the factory context 
-      dependencies: [
-        new webpack.dependencies.ModuleDependency("./haskell.ffi.js"),
-        new webpack.dependencies.ModuleDependency("./haskell.wasm")
-      ]
-    });*/
-
     });
-    /*
-    let result = await createModule(normalModuleFactory, {
-      contextInfo: {
-        issuer: HaskellPlugin.constructor.name,
-        compiler: HaskellPlugin.constructor.name,
-      },
-      resolveOptions: {
-
-      },
-      context: "", // will default to the factory context 
-      dependencies: [
-        new webpack.dependencies.ModuleDependency("./haskell.ffi.js"),
-        new webpack.dependencies.ModuleDependency("./haskell.wasm")
-      ]
-    });
-    console.log("new", result);
-    */
   }
 
   async _buildHaskellCode(debug, normalModuleFactory: NormalModuleFactory): Promise<void> {

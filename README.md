@@ -55,3 +55,8 @@ if (import.meta.webpackHot) {
 wasmHMRLoader.raw = true;
 export default wasmHMRLoader;
 ```
+
+The [HMR API Docs](https://webpack.js.org/api/hot-module-replacement/)
+have some more information. There are tools to e.g. let you register
+a callback for when things are replaced, etc. If I implemented a way
+to split up haskell components, I could probably do that pretty easily.

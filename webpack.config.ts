@@ -50,6 +50,10 @@ export default {
     //syncWebAssembly: true
   },
   devServer: {
+    // See the hot module reloading with haskell section in the
+    // readme for why that doesn't work right now and thoughts
+    // about making it work.
+    hot: false,
     devMiddleware: {
       mimeTypes: {
         wasm: 'application/wasm',
