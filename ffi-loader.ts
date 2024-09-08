@@ -9,6 +9,11 @@ const ffiLoader: LoaderDefinition = function(source) {
   let wasmPath = path.resolve('./haskell/haskell.wasm');
   console.log("wasm path", wasmPath);
   this.addDependency(wasmPath);
-  this.callback(null, source);
+  // we use the date hash to make sure that this file changes
+  // every time the wasm changes.
+  this.callback(null, `
+${source}
+const dateThatExistsOnlyToInvalidateHashes = ${Date.now()};
+`);
 }
 export default ffiLoader;
