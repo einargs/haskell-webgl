@@ -1,3 +1,79 @@
+# Fine Grained Reactivity in Haskell
+I want to build a system that produces a free monad with
+embeded pieces of reactivity that a runtime system can manage.
+
+This is heavily inspired by leptos-rs, which is inspired by solidJS.
+
+## Notes on how Leptos does Reactivity
+Leptos' view exists as a simple data structure -- it doesn't even do the
+SwiftUI-style generic composition that I expected. Attributes are enums
+that can be a static value or a function that can be run to produce a new
+value.
+
+https://docs.rs/leptos_reactive/0.6.15/src/leptos_reactive/signal.rs.html#336-342
+`create_signal` hooks into `Runtime::current().create_signal`.
+
+Runtime is here: https://docs.rs/leptos_reactive/0.6.15/src/leptos_reactive/runtime.rs.html#58
+
+What I should also read up on is the signals proposal -- that will have
+example code and a very well thought out proposition of all the pieces
+you need for fine grained reactivity.
+
+## Haskell design
+We will store various things in flat maps that will own them and allow
+for mutation ala leptos. Using `Data.HashMap.Strict` is a hash array mapped
+trie system, so it will run in constant time effectively.
+
+How do I make sure they get garbage collected then?
+
+I will need a way to get a reference to the real elements? Look at what
+the leptos node id does.
+
+I think I want a separate monad that runs inside an event handler versus
+creating a component. I want to be able to write to signals and do
+side effects inside an event handler. Presumably I'll have something
+to do fetches and other things inside an event handler? Actually no,
+I should check out how leptos does it with resources.
+
+I think event handlers will have a restricted set of commands, and then
+probably an escape hatch to IO. Do I want event handlers to only have
+access to setting signals? I guess that's okay.
+
+Actually, I don't think that the `Component` monad should be able to
+read or write from signals at all. It's job is produce a static output,
+so it shouldn't be able to read dynamic data and fuck that up.
+
+If you want to e.g. render different output, that has to be done via
+re-runnable sections of monad inside the elements that are returned.
+The leptos closures, in other words.
+
+The Signals proposal has some interesting links to discussions about
+async signals, which would be very interesting. I should look at how
+solid has approached that. It sounds very similar to react's use and
+similar transitions etc. Leptos has some stuff with that too.
+
+## Read up on how leptos does
+- resources (for fetch)
+- directives
+- node ids to interact with the underlying DOM
+
+## Maybe in future
+- leptos style actions that you can dispatch to
+
+## NEXT: work on a basic ass haskell impelmentation of sigals
+I could implement it myself. Or I could steal from an existing
+functional reactive programming library like reactive-bannana
+and use that to underlie everything. And then probably write my own
+because this project is so much inline with web tech.
+
+I need to read up on functional reactive programming; it would
+be a shame to ignore something that haskell is really good at.
+But I think it should wait until I have basic signal stuff implemented,
+because right now I'm basically just building leptos in haskell.
+
+Also, I want to implement the signals myself to learn.
+https://www.youtube.com/watch?time_continue=1&v=mYvkcskJbc4
+
 # Webpack Notes
 ## Adjusting 
 The idea is to avoid needing to mess with the filesystem

@@ -17,6 +17,10 @@ See:
 Use the nix package manager to install all the dependencies needed; just run
 `nix develop` once flakes are enabled.
 
+## Bugs
+- Currently for some reason the live reloading on the second change after the
+  initial compile. Who knows why.
+
 ## Hot Module Reloading with Haskell
 To setup fully functioning hot module reloading I would need
 to setup a way to tear down the wasm reactor and replace it. That should

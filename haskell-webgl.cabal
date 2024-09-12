@@ -54,6 +54,44 @@ extra-doc-files:    CHANGELOG.md
 common warnings
     ghc-options: -Wall
 
+library
+    import: warnings
+
+    -- Modules exported by the library.
+    exposed-modules: Lib
+
+    -- Modules included in this library but not exported.
+    other-modules:
+      Signal,
+      DependentSlotMap
+
+    -- LANGUAGE extensions used by modules in this package.
+    -- TODO: Why aren't these taking effect in the lsp?
+    other-extensions:
+      OverloadedRecordDot,
+      RecordWildCards,
+      BlockArguments
+
+    -- Other library packages from which modules are imported.
+    build-depends:    base ^>=4.20.0.0,
+      mtl >= 2.3.1,
+      unordered-containers >= 0.2.20,
+      containers >= 0.7,
+      slotmap >= 0.1.0.0,
+      these >= 1.2.1,
+      dependent-map >= 0.4.0.0,
+      prim-uniq >= 0.2,
+      primitive >= 0.9,
+      optics >= 0.4.2.1
+
+
+
+    -- Directories containing source files.
+    hs-source-dirs:   lib
+
+    -- Base language which the package is written in.
+    default-language: GHC2024
+
 executable haskell-webgl
     -- Import common warning flags.
     import:           warnings
@@ -74,6 +112,7 @@ executable haskell-webgl
     -- other-extensions:
 
     -- Other library packages from which modules are imported.
+    -- was 4.20.0.0 initially but hls complained
     build-depends:    base ^>=4.20.0.0,
       ghc-experimental
 
@@ -81,4 +120,4 @@ executable haskell-webgl
     hs-source-dirs:   app
 
     -- Base language which the package is written in.
-    default-language: GHC2021
+    default-language: GHC2024

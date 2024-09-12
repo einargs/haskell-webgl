@@ -7,6 +7,7 @@ import CopyPlugin from "copy-webpack-plugin";
 import HaskellPlugin from "./haskell-plugin.ts";
 
 // path to where cabal puts the wasm.
+// I have no idea how I'm going to make that dynamic.
 const WASM_PATH = "dist-newstyle/build/wasm32-wasi/ghc-9.11.20240828/haskell-webgl-0.1.0.0/x/haskell-webgl/opt/build/haskell-webgl/haskell-webgl.wasm";
 
 export default {
