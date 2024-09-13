@@ -1,6 +1,10 @@
-{-# LANGUAGE TypeFamilies, BlockArguments, RecordWildCards, OverloadedRecordDot, NoFieldSelectors #-}
+{-# LANGUAGE TypeFamilies, BlockArguments,
+ RecordWildCards, OverloadedRecordDot, NoFieldSelectors,
+ OverloadedLabels, FlexibleInstances, MultiParamTypeClasses #-}
 module Signal () where
 
+import Control.Monad (when)
+import GHC.Generics (Generic)
 import Data.Kind (Type)
 import Data.Void (Void)
 import Data.Map.Strict (Map)
@@ -17,9 +21,14 @@ import Control.Monad.State.Strict (
 import Control.Monad.IO.Class (MonadIO(..))
 import Data.Unique.Tag (GCompare(..), GOrdering(..), GEq(..))
 
-import Optics.Lens (Lens', lens)
+import Optics.Lens (Lens', lens, lensVL, A_Lens)
 import Optics.Setter (over, set')
 import Optics.Getter (view)
+import Optics.Label (LabelOptic(..))
+import Optics.Operators ((^.), (%~), (.~))
+import Optics.Optic ((%))
+import Optics.IxTraversal (iforOf)
+import Optics.Each (each)
 
 import DependentSlotMap (Key, DSlotMap)
 import DependentSlotMap qualified as DSMap
@@ -31,6 +40,9 @@ cycleDetectedError = error "A cycle was detected during computation"
 
 newtype Version = Version Int
   deriving (Show, Eq, Ord)
+
+bumpVersion :: Version -> Version
+bumpVersion (Version i) = Version $ i+1
 
 data SharedData = SharedData
   { version :: Version
@@ -60,20 +72,21 @@ data SharedData = SharedData
   unwatched?(): void;
 -}
   }
-  deriving Show
+  deriving (Show, Generic)
 
 initialSharedData :: SharedData
 initialSharedData = SharedData
   { dirty = False
   , lastCleanEpoch = Version 0
   , version = Version 0
-  }
+  } 
 
 -- | Information about producers that a consumer depends on.
 data DependencyOnProducer = DependencyOnProducer
   { producerLastReadVersion :: !Version
   -- ^ `Version` of the value last read by a given producer.
   }
+  deriving (Generic)
 
 data ConsumerData = ConsumerData
   { producerNodes :: Map ProducerId DependencyOnProducer
@@ -91,10 +104,11 @@ data ConsumerData = ConsumerData
   consumerOnSignalRead(node: unknown): void;
 -}
   }
+  deriving (Generic)
 
 initialConsumerData :: ConsumerData
 initialConsumerData = ConsumerData
-  { producerNodes = Seq.empty
+  { producerNodes = Map.empty
   }
 
 --data DependencyOnConsumer = DependencyOnConsumer {  }
@@ -142,9 +156,53 @@ data NodeData (k :: ReactiveNodeKind) (a :: Type) where
     -- ^ The computation that will re-calculate the value using
     -- the producers this signal depends on.
     } -> NodeData 'ComputedSignalKind a
-  WatcherData :: NodeData 'ComputedSignalKind Void
+  WatcherData :: NodeData 'WatcherKind Void
+
+instance LabelOptic "rwValue" A_Lens (NodeData 'RwSignalKind a) (NodeData 'RwSignalKind a) a a where
+  labelOptic = lensVL \f signalData@(RwSignalData{..}) ->
+    let g a = signalData{rwValue=a}
+    in g <$> f rwValue
+
+instance LabelOptic "rwEquality" A_Lens
+  (NodeData 'RwSignalKind a)
+  (NodeData 'RwSignalKind a)
+  (a -> a -> Bool)
+  (a -> a -> Bool) where
+    labelOptic = lensVL \f signalData@(RwSignalData{..}) ->
+      let g a = signalData{rwEquality=a}
+      in g <$> f rwEquality
+
+instance LabelOptic "cValue" A_Lens
+  (NodeData 'ComputedSignalKind a)
+  (NodeData 'ComputedSignalKind a)
+  (ComputedValue a) (ComputedValue a) where
+    labelOptic = lensVL \f signalData@(ComputedSignalData{..}) ->
+      let g a = signalData{cValue=a}
+      in g <$> f cValue
+
+instance LabelOptic "cEquality" A_Lens
+  (NodeData 'ComputedSignalKind a)
+  (NodeData 'ComputedSignalKind a)
+  (a -> a -> Bool)
+  (a -> a -> Bool) where
+    labelOptic = lensVL \f signalData@(ComputedSignalData{..}) ->
+      let g a = signalData{cEquality=a}
+      in g <$> f cEquality
+
+instance LabelOptic "computation" A_Lens
+  (NodeData 'ComputedSignalKind a)
+  (NodeData 'ComputedSignalKind a)
+  (Reading a)
+  (Reading a) where
+    labelOptic = lensVL \f signalData@(ComputedSignalData{..}) ->
+      let g a = signalData{computation=a}
+      in g <$> f computation
 
 -- | A node in the graph of reactive nodes.
+--
+-- I'm still not sure if RwSignals are actually consumers or
+-- not. I don't think they would be, but the polyfill is kind
+-- of confusing on it.
 data ReactiveNode (k :: ReactiveNodeKind) (a :: Type) where
   RwSignalNode
     :: !(NodeData 'RwSignalKind a)
@@ -165,26 +223,26 @@ data ReactiveNode (k :: ReactiveNodeKind) (a :: Type) where
     -> ReactiveNode 'WatcherKind Void
 
 sharedDataLens :: forall k a. Lens' (ReactiveNode k a) SharedData
-sharedDataLens = lens get set where
-  get :: ReactiveNode k a -> SharedData
-  get (RwSignalNode nd sd pd cd) = sd
-  get (ComputedSignalNode nd sd pd cd) = sd
-  get (WatcherNode nd sd cd) = sd
-  set :: ReactiveNode k a -> SharedData -> ReactiveNode k a
-  set (RwSignalNode rwd sd pd cd) sd' = RwSignalNode rwd sd' pd cd
-  set (ComputedSignalNode csd sd pd cd) sd' = ComputedSignalNode csd sd' pd cd
-  set (WatcherNode nd sd cd) sd' = WatcherNode nd sd' cd
+sharedDataLens = lens g s where
+  g :: ReactiveNode k a -> SharedData
+  g (RwSignalNode _nd sd _pd _cd) = sd
+  g (ComputedSignalNode _nd sd _pd _cd) = sd
+  g (WatcherNode _nd sd _cd) = sd
+  s :: ReactiveNode k a -> SharedData -> ReactiveNode k a
+  s (RwSignalNode rwd _sd pd cd) sd' = RwSignalNode rwd sd' pd cd
+  s (ComputedSignalNode csd _sd pd cd) sd' = ComputedSignalNode csd sd' pd cd
+  s (WatcherNode nd _sd cd) sd' = WatcherNode nd sd' cd
 
 nodeDataLens :: forall k a. Lens' (ReactiveNode k a) (NodeData k a)
-nodeDataLens = lens get set where
-  get :: ReactiveNode k a -> NodeData k a
-  get (RwSignalNode nd sd pd cd) = nd
-  get (ComputedSignalNode nd sd pd cd) = nd
-  get (WatcherNode nd sd cd) = nd
-  set :: ReactiveNode k a -> NodeData k a -> ReactiveNode k a
-  set (RwSignalNode nd sd pd cd) nd' = RwSignalNode nd' sd pd cd
-  set (ComputedSignalNode nd sd pd cd) nd' = ComputedSignalNode nd' sd pd cd
-  set (WatcherNode nd sd cd) nd' = WatcherNode nd' sd cd
+nodeDataLens = lens g s where
+  g :: ReactiveNode k a -> NodeData k a
+  g (RwSignalNode nd sd pd cd) = nd
+  g (ComputedSignalNode nd sd pd cd) = nd
+  g (WatcherNode nd sd cd) = nd
+  s :: ReactiveNode k a -> NodeData k a -> ReactiveNode k a
+  s (RwSignalNode nd sd pd cd) nd' = RwSignalNode nd' sd pd cd
+  s (ComputedSignalNode nd sd pd cd) nd' = ComputedSignalNode nd' sd pd cd
+  s (WatcherNode nd sd cd) nd' = WatcherNode nd' sd cd
 
 class IsProducer (k :: ReactiveNodeKind) where
   producerDataLens :: forall a. Lens' (ReactiveNode k a) ProducerData
@@ -224,28 +282,29 @@ instance IsProducer 'ComputedSignalKind where
     s (ComputedSignalNode csd sd _pd cd) pd' = ComputedSignalNode csd sd pd' cd
   producerMustRecompute (ComputedSignalNode csd _sd _pd _cd) =
     -- Is an error for it to be in Computing
-    case csd.value of
+    case csd ^. #cValue of
       ComputingValue -> cycleDetectedError
       UnsetValue -> True
       ComputedValue _ -> False
+  producerRecomputeValue :: forall a. ComputedSignal a -> SignalRuntimeState -> IO ()
   producerRecomputeValue key runtime = do
-    node <- viewNode runtime key nodeDataLens
-    oldValue <- case node.value of
+    (node :: ReactiveNode 'ComputedSignalKind a) <- viewNode runtime key
+    oldValue <- case node ^. nodeDataLens % #cValue of
+      -- computation of this somehow lead to a cyclic read of this.
       ComputingValue -> cycleDetectedError
       UnsetValue -> pure Nothing
       ComputedValue a -> pure $ Just a
-    adjustNode runtime key nodeDataLens \nd->nd{cValue=ComputingValue}
-    let equality = node.cEquality
-    newValue <- runReading runtime key node.computation
-    let f :: ReactiveNode 'ComputedSignalKind a -> ReactiveNode 'ComputedSignalKind a
-        f = over sharedDataLens (\sd -> sd{version=sd.version+1})
-          . over nodeDataLens (\nd-> nd{cValue=ComputedValue $ case oldValue of
+    adjustNode runtime key $ set' (nodeDataLens % #cValue) ComputingValue
+    let equality = node ^. nodeDataLens % #cEquality
+    newValue <- runReading runtime key $ node ^. nodeDataLens % #computation
+    let nextValue = case oldValue of
             Nothing -> newValue
             Just old -> if equality old newValue
-              then old else newValue})
-    adjustNode runtime key idLens f
-    -- consumerAfterComputation
-    pure ()
+              then old else newValue
+        f :: ReactiveNode 'ComputedSignalKind a -> ReactiveNode 'ComputedSignalKind a
+        f = (sharedDataLens % #version %~ bumpVersion)
+          . (nodeDataLens % #cValue .~ ComputedValue nextValue)
+    adjustNode runtime key f
 
 
 instance IsConsumer 'RwSignalKind where
@@ -327,6 +386,21 @@ instance Ord ProducerId where
     ak = toBaseKey a
     bk = toBaseKey b
 
+-- Can I do this?
+data ProducerInstance k = IsProducer k => ProducerInstance
+
+-- | Dynamically retrieve an IsConsumer instance for a 'ReactiveNodeKind'.
+toConsumerId :: RNKey k a -> Maybe ConsumerId
+toConsumerId key@RwSignal{} = Just $ ConsumerId key
+toConsumerId key@ComputedSignal{} = Just $ ConsumerId key
+toConsumerId key@Watcher{} = Nothing
+
+-- | Dynamically retrieve an IsProducer instance for a 'ReactiveNodeKind'.
+toProducerId :: RNKey k a -> Maybe ProducerId
+toProducerId key@RwSignal{} = Just $ ProducerId key
+toProducerId key@ComputedSignal{} = Just $ ProducerId key
+toProducerId key@Watcher{} = Nothing
+
 -- | I'm pretty sure that I'm going to need to either
 -- figure out how to make this a weak set or better yet
 -- build some smart handling to remove consumers? Wait,
@@ -334,42 +408,42 @@ instance Ord ProducerId where
 -- track what's in a component and deallocate it when that
 -- component goes away? Does that make sense given how components
 -- work?
+--
+-- I could just use IORefs for each individual signal couldn't
+-- I? That would be much more efficient. Damn it.
+--
+-- It also wouldn't have the problem of how to get rid of old
+-- nodes.
 type RNGraph = DSlotMap IO
 
 data SignalRuntimeState = SignalRuntimeState
   { nodeGraph :: !RNGraph
+  , currentEpoch :: Version
   }
+  deriving (Generic)
 
 -- | Read a property of the node through a lens.
 viewNode :: forall k v a m.
-  MonadIO m => SignalRuntimeState -> RNKey k v -> Lens' (ReactiveNode k v) a -> m a
-viewNode SignalRuntimeState{nodeGraph} key lens = liftIO $ do
+  MonadIO m => SignalRuntimeState -> RNKey k v -> m (ReactiveNode k v)
+viewNode SignalRuntimeState{nodeGraph} key = liftIO do
   node <- DSMap.lookup (toBaseKey key) nodeGraph
   case node of
     Nothing -> error "Node did not exist corresponding to key"
-    Just node' -> pure $ view lens node'
+    Just node' -> pure node'
 
--- | Update a property of the node through a lens.
-setNode
-  :: MonadIO m
-  => SignalRuntimeState
-  -> RNKey k v
-  -> Lens' (ReactiveNode k v) a
-  -> a
-  -> m ()
-setNode SignalRuntimeState{nodeGraph} key lens val =
-  liftIO $ DSMap.adjust (set' lens val) (toBaseKey key) nodeGraph
-
--- | Apply a modifying function to the node through a lens.
+-- | Apply a modifying function to the node.
 adjustNode
   :: MonadIO m
   => SignalRuntimeState
   -> RNKey k v
-  -> Lens' (ReactiveNode k v) a
-  -> (a -> a)
+  -> (ReactiveNode k v -> ReactiveNode k v)
   -> m ()
-adjustNode SignalRuntimeState{nodeGraph} key lens f =
-  liftIO $ DSMap.adjust (over lens f) (toBaseKey key) nodeGraph
+adjustNode SignalRuntimeState{nodeGraph} key f =
+  liftIO $ DSMap.adjust f (toBaseKey key) nodeGraph
+
+-- | Check if a consumer is live.
+consumerIsLive :: ReactiveNode k a -> Bool
+consumerIsLive node = (node ^. consumerDataLens % #) /= Map.empty
 
 -- | Creates a read-write signal that uses the built-in
 -- equality typeclass to determine if different.
@@ -408,12 +482,14 @@ data ReadingState = ReadingState
   { usedProducers :: Set ProducerId
   , runtime :: SignalRuntimeState
   }
+  deriving (Generic)
 
 -- | Can only read from signals.
 --
 -- Used for e.g. creating new computed signals.
 newtype Reading a = MkReading { unReading :: StateT ReadingState IO a }
   deriving (Functor, Applicative, Monad, MonadState ReadingState, MonadIO)
+
 
 producerAccessed :: IsProducer k => RNKey k a -> Reading ()
 producerAccessed key = do
@@ -424,38 +500,135 @@ readRwSignal :: RwSignal a -> Reading a
 readRwSignal signal = do
   producerAccessed signal
   reading@ReadingState{runtime} <- get
-  signalData <- viewNode @'RwSignalKind runtime signal nodeDataLens
-  pure $ case signalData of
+  signalData <- viewNode @'RwSignalKind runtime signal
+  pure $ case signalData ^. nodeDataLens of
     RwSignalData{rwValue} -> rwValue
 
--- computedProducerMustRecompute :: 
--- computedProducerRecomputeValue ::
 
+-- | Poll the producers this consumer depends on to see if there has
+-- been any changes. Returns true if there have been changes.
+consumerPollProducersForChange
+  :: (IsConsumer k, MonadIO m)
+  => SignalRuntimeState -> RNKey k a -> m Bool
+consumerPollProducersForChange runtime signal = do
+  node <- viewNode runtime signal
+  -- NOTE: this does not short circuit and thus could be improved
+  or <$> iforOf each (node ^. consumerDataLens % #producerNodes)
+    \(ProducerId producerKey) dep -> do
+      let seenVersion = dep.producerLastReadVersion
+          getProducerVersion = do
+            producerNode <- viewNode runtime producerKey
+            pure $ producerNode ^. sharedDataLens % #version
+      pVersion <- getProducerVersion
+      -- a mismatch means that the producer's value is known
+      -- to have changed since the last time we saw it.
+      if pVersion == seenVersion
+        then pure False
+        else do
+          -- The producer's version is the same as the last time we
+          -- read it, but it might itself be stale. Force the producer
+          -- to recompute its version (calculating a new value if
+          -- necessary).
+          producerUpdateValueVersion runtime producerKey
+          -- Then repeat the check with the updated version.
+          (seenVersion /=) <$> getProducerVersion
+    
+-- | Ensure that this producer's `version` is up to date.
 producerUpdateValueVersion
-  :: (MonadIO m, IsProducer k)
-  => SignalRuntimeState -> RNKey k a -> m (ReactiveNode k a)
-producerUpdateValueVersion signal = do
-  
-  error "todo"
+  :: (MonadIO m, IsProducer k, IsConsumer k)
+  => SignalRuntimeState -> RNKey k a -> m ()
+producerUpdateValueVersion runtime signal = do
+  let SignalRuntimeState{currentEpoch} = runtime
+  node <- viewNode runtime signal
+  let sharedData = node ^. sharedDataLens
+  -- A live consumer will be marked dirty by producers, so a clean
+  -- state means that the version is guarenteed to be up to date.
+  let liveAndClean = consumerIsLive node && not sharedData.dirty
+  -- Even non-live consumers can skip polling if they previously
+  -- found themselves to be clean at the current epoch, since their
+  -- dependencies could not possibly have changed (such a change
+  -- would have increased the epoch).
+  let cleanThisEpoch = not sharedData.dirty && sharedData.lastCleanEpoch == currentEpoch
+  when (not liveAndClean && not cleanThisEpoch) do
+    let mustRecompute = producerMustRecompute node
+    producersChanged <- consumerPollProducersForChange runtime signal
+    -- If either the node says we need to recompute or one of the producers
+    -- for this node says a producer we depend on has changed, then we
+    -- need to recompute.
+    when (mustRecompute || producersChanged) $
+      liftIO $ producerRecomputeValue signal runtime
+    -- We are now no longer dirty and can update our last clean
+    -- epoch.
+    adjustNode runtime signal (over sharedDataLens
+      (set' #dirty False . set' #lastCleanEpoch currentEpoch))
 
-readComputedSignal :: ComputedSignal a -> Reading a
+readComputedSignal :: forall a. ComputedSignal a -> Reading a
 readComputedSignal signal = do
   ReadingState{runtime} <- get
-  node <- producerUpdateValueVersion runtime signal
-  let nodeData = get nodeDataLens node
-  pure $ nodeData.cValue
+  producerUpdateValueVersion runtime signal
+  producerAccessed signal
+  node <- viewNode runtime signal
+  case node ^. nodeDataLens % #cValue of
+    ComputedValue v -> pure v
+    _ -> error "computed signal failed to resolve to a value"
 
+
+-- This is just consumerAfterComputation
 runReading :: (IsConsumer k,  MonadIO m)
   => SignalRuntimeState -> RNKey k a -> Reading a -> m a
 runReading runtime activeConsumer m = liftIO do
+  -- TODO: base some of this off of producerAccessed. we 
   error "todo"
 
+-- | Remove the consumer from being a dependency of the producer.
+--
+-- This is the same thing as producerRemoveLiveConsumerAtIndex from
+-- the signal-polyfill.
+removeConsumerFromProducer
+  :: (MonadIO m, IsConsumer k1, IsProducer k2)
+  => SignalRuntimeState -> RNKey k1 a -> RNKey k2 b -> m ()
+removeConsumerFromProducer runtime consumer producer = do
+  -- NOTE: the polyfill does things in a slightly different order
+  -- but I don't think it matters.
+  adjustNode runtime producer $
+    producerDataLens % #liveConsumerNodes %~ Map.deleteAt (ConsumerId consumer)
+  -- If the producer is also a consumer, then we it has stopped
+  -- being live
+  maybe (toConsumerId producer) \(ProducerId consumerProducer) -> do
+    node <- viewNode runtime consumerProducer
+    when (not live)
+    -- NOTE: we would call unwatched here
+
+-- | Finalize this consumer's state after a reactive computation has
+-- run.
+--
+-- Must be called after performing a reactive computation associated
+-- with this consumer.
+consumerAfterComputation
+  :: (IsProducer k, IsConsumer k, MonadIO m)
+  => SignalRuntimeState -> RNKey k a -> m ()
+consumerAfterComputation runtime key = do
+  -- There are weird similarities between this and the producerAccessed
+  -- function, but I'm too tired to figure it out. I should sit down
+  -- and write out the full new design.
+  node <- viewNode runtime key
+  if consumerIsLive node
+  error "TODO"
 
 
 
 
 
 
+
+-- | Disconnect this consumer from the graph.
+--
+-- Should not be a producer that is dependend on by
+-- other things.
+consumerDestroy
+  :: (IsConsumer k, MonadIO m)
+  => SignalRuntimeState -> RNKey k a -> m ()
+consumerDestroy runtime key = error "TODO"
 
 
 
