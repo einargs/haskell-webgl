@@ -30,6 +30,16 @@
       wasm-ghc = wasm-meta.wasm32-wasi-ghc-gmp;
       wasm-cabal = wasm-meta.wasm32-wasi-cabal-gmp;
       #wasm-cabal-alias = pkgs.writeShellScriptBin "cabal" "exec -a $0 ${wasm-cabal}/bin/wasm32-wasi-cabal $@";
+
+      # For some reason the default wasm-cabal wrapper isn't working
+      # so I'm wrapping it myself.
+      custom-wasm-cabal = pkgs.writeShellScriptBin "wasm-cabal" ''
+        exec ${wasm-meta.cabal}/bin/cabal \
+          --with-compiler=${wasm-ghc}/bin/wasm32-wasi-ghc \
+          --with-hc-pkg=${wasm-ghc}/bin/wasm32-wasi-ghc-pkg \
+          --with-hsc2hs=${wasm-ghc}/bin/wasm32-wasi-hsc2hs \
+          ''${1+"$@"}
+      '';
   in {
     # This is because the wasm ghc -- and I think specifically
     # the cabal with custom flags -- is causing problems for the
@@ -51,6 +61,7 @@
         #wasm-meta.cabal
         #wasm-cabal-alias
         wasm-meta.default
+        custom-wasm-cabal
         haskell.packages.ghc910.haskell-language-server
         #haskell.compiler.ghc910
         haskellPackages.implicit-hie # use with gen-hie

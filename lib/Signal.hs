@@ -16,7 +16,7 @@ import Data.Sequence (Seq(..))
 import Data.Sequence qualified as Seq
 import Data.These (These(..))
 import Control.Monad.State.Strict (
-  MonadState(..), modify', StateT, State
+  MonadState(..), modify', StateT, State, runStateT
   )
 import Control.Monad.IO.Class (MonadIO(..))
 import Data.Unique.Tag (GCompare(..), GOrdering(..), GEq(..))
@@ -443,7 +443,7 @@ adjustNode SignalRuntimeState{nodeGraph} key f =
 
 -- | Check if a consumer is live.
 consumerIsLive :: ReactiveNode k a -> Bool
-consumerIsLive node = (node ^. consumerDataLens % #) /= Map.empty
+consumerIsLive node = (node ^. consumerDataLens % #producerNodes) /= Map.empty
 
 -- | Creates a read-write signal that uses the built-in
 -- equality typeclass to determine if different.
@@ -479,7 +479,7 @@ createComputedSignalNode SignalRuntimeState{nodeGraph} computation = liftIO do
   
 
 data ReadingState = ReadingState
-  { usedProducers :: Set ProducerId
+  { usedProducers :: Map ProducerId DependencyOnProducer
   , runtime :: SignalRuntimeState
   }
   deriving (Generic)
@@ -572,13 +572,22 @@ readComputedSignal signal = do
     ComputedValue v -> pure v
     _ -> error "computed signal failed to resolve to a value"
 
-
 -- This is just consumerAfterComputation
 runReading :: (IsConsumer k,  MonadIO m)
   => SignalRuntimeState -> RNKey k a -> Reading a -> m a
 runReading runtime activeConsumer m = liftIO do
+  let startState = ReadingState
+        { runtime=runtime, usedProducers=Set.empty }
+  (v, endState) <- flip runStateT startState $ unReading m 
+  let ReadingState{runtime=runtime',usedProducers} = endState
+  consumerNode <- viewNode runtime activeConsumer
+  
   -- TODO: base some of this off of producerAccessed. we 
+  -- also based off of consumerAfterComputation
   error "todo"
+  where
+    updateProducers :: Set 
+    updateProducers
 
 -- | Remove the consumer from being a dependency of the producer.
 --
@@ -596,7 +605,9 @@ removeConsumerFromProducer runtime consumer producer = do
   -- being live
   maybe (toConsumerId producer) \(ProducerId consumerProducer) -> do
     node <- viewNode runtime consumerProducer
-    when (not live)
+    -- TODO
+    error "TODO"
+    --when (not live)
     -- NOTE: we would call unwatched here
 
 -- | Finalize this consumer's state after a reactive computation has
