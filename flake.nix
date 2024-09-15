@@ -68,7 +68,7 @@
         # this is exposing ghc 9.6 on the PATH for some reason.
         #haskellPackages.haskell-language-server
       ];
-      WASM_CABAL = "${wasm-cabal}/bin/wasm32-wasi-cabal";
+      WASM_CABAL = "${custom-wasm-cabal}/bin/wasm-cabal";
       shellHook = ''
         export POST_LINK=$(wasm32-wasi-ghc --print-libdir)/post-link.mjs
       '';

@@ -9,7 +9,12 @@
 {-# LANGUAGE ViewPatterns #-}
 
 module Signal.Graph (
-
+  Reading,
+  createSignalRuntime,
+  SignalRuntimeState,
+  RwSignal, ComputedSignal,
+  readRwSignal, readComputedSignal,
+  modifyRwSignal
 ) where
 
 import Control.Monad (when)
@@ -37,6 +42,7 @@ import DependentSlotMap (DSlotMap, Key)
 import DependentSlotMap qualified as DSMap
 import GHC.Generics (Generic)
 import Data.Foldable (for_)
+import Data.IORef (IORef, newIORef, readIORef, modifyIORef')
 
 import Optics.Each (each)
 import Optics.Indexed (ifor_)
@@ -534,11 +540,27 @@ asConsumer f = case getRNKindSing f of
 -- nodes.
 type RNGraph = DSlotMap IO
 
+-- | All the runtime information for a signal graph.
+--
+-- All the properties should be mutable variables ala the
+-- Reader-IO pattern. Since the graph is mutable no matter
+-- what, we want to make sure other things have the same
+-- behavior when e.g. exceptions happen.
 data SignalRuntimeState = SignalRuntimeState
   { nodeGraph :: !RNGraph,
-    currentEpoch :: Version
+    currentEpoch :: !(IORef Version)
   }
   deriving (Generic)
+
+createSignalRuntime :: MonadIO m => m SignalRuntimeState
+createSignalRuntime = do
+  graph <- liftIO $ DSMap.newDSlotMap
+  versionRef <- liftIO $ newIORef $ Version 1
+  pure SignalRuntimeState
+    { nodeGraph = graph
+    , currentEpoch = versionRef
+    }
+  
 
 -- | Read a property of the node through a lens.
 viewNode ::
@@ -663,7 +685,7 @@ producerUpdateValueVersion ::
   (MonadIO m, IsProducer k) =>
   SignalRuntimeState -> RNKey k a -> m ()
 producerUpdateValueVersion runtime signal = do
-  let SignalRuntimeState {currentEpoch} = runtime
+  currentEpoch <- liftIO $ readIORef runtime.currentEpoch
   node <- viewNode runtime signal
   let sharedData = node ^. sharedDataLens
   -- A live consumer will be marked dirty by producers, so a clean
@@ -808,6 +830,32 @@ consumerDestroy ::
   (IsConsumer k, MonadIO m) =>
   SignalRuntimeState -> RNKey k a -> m ()
 consumerDestroy runtime key = error "TODO"
+
+consumerMarkDirty :: (IsConsumer k, MonadIO m)
+  => SignalRuntimeState -> RNKey k a -> m ()
+consumerMarkDirty runtime signal = do
+  adjustNode runtime signal $ sharedDataLens % #dirty .~ True
+  node <- viewNode runtime signal
+  for_ (asProducer signal) \Witness ->
+    producerNotifyConsumers runtime signal
+    -- NOTE: this is where the consumerMarkedDirty hook gets
+    -- called, which I'll probably need to add in order to
+    -- get watchers working?
+
+producerNotifyConsumers :: (IsProducer k, MonadIO m)
+  => SignalRuntimeState -> RNKey k a -> m ()
+producerNotifyConsumers runtime signal = do
+  node <- viewNode runtime signal
+  for_ (node ^. producerDataLens % #liveConsumerNodes)
+    \(ConsumerId consumer) -> consumerMarkDirty runtime consumer
+
+modifyRwSignal :: MonadIO m => SignalRuntimeState ->
+  RwSignal a -> (a -> a) -> m ()
+modifyRwSignal runtime signal f = liftIO $ do
+  adjustNode runtime signal $
+    (sharedDataLens % #version %~ bumpVersion)
+    . (nodeDataLens % #rwValue %~ f)
+  modifyIORef' runtime.currentEpoch bumpVersion
 
 {-
 -- | See producerRemoveLiveConsumerAtIndex in graph.ts

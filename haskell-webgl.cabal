@@ -61,7 +61,17 @@ common deps
       OverloadedRecordDot,
       RecordWildCards,
       BlockArguments,
-      NoFieldSelectors
+      NoFieldSelectors,
+      BlockArguments,
+      FlexibleInstances,
+      MultiParamTypeClasses,
+      OverloadedLabels,
+      OverloadedRecordDot,
+      RecordWildCards,
+      TypeFamilies,
+      NoFieldSelectors,
+      DuplicateRecordFields,
+      ViewPatterns
     -- Other library packages from which modules are imported.
     build-depends:    base ^>=4.20.0.0,
       --th-abstraction >= 0.7.0.0,
@@ -73,7 +83,9 @@ common deps
       dependent-map >= 0.4.0.0,
       prim-uniq >= 0.2,
       primitive >= 0.9,
-      optics == 0.4.2.1
+      optics == 0.4.2.1,
+      text ^>= 2.1.1,
+      ghc-experimental
       --extra ^>= 1.7.16
 
 library
@@ -86,9 +98,10 @@ library
     other-modules:
       Signal,
       DependentSlotMap,
-      Signal.Graph
-
-
+      Signal.Graph,
+      View,
+      Component,
+      Bind
 
     -- Directories containing source files.
     hs-source-dirs:   lib
@@ -118,7 +131,7 @@ executable haskell-webgl
     -- Other library packages from which modules are imported.
     -- was 4.20.0.0 initially but hls complained
     build-depends:    base ^>=4.20.0.0,
-      ghc-experimental
+      haskell-webgl
 
     -- Directories containing source files.
     hs-source-dirs:   app
