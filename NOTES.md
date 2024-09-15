@@ -74,6 +74,25 @@ because right now I'm basically just building leptos in haskell.
 Also, I want to implement the signals myself to learn.
 https://www.youtube.com/watch?time_continue=1&v=mYvkcskJbc4
 
+# Signal Polyfill Notes
+I'm basing the reactivity off of the signal-polyfill.
+
+However, the signal polyfill does not cover scheduling. You have
+a watcher with a callback that gets invoked synchronously whenever
+one of the signals it is watching becomes dirty. You are supposed
+to use that to then schedule an actual computation for it.
+
+So an `effect(callback)` implementation would create a computed signal
+to track the things used inside `callback`, and then watch would
+subscribe to that. Then it would schedule a (e.g. using `queueMicrotask`)
+something to go and call `getPending` on the watcher and then call
+`get` on all of those signals to force them. (And then `watch` on the
+watcher to tell it to reset the pending list.)
+
+I'm not sure I like that approach? I do think that needing to schedule
+things will be inevitable in a more advanced framework. So why not
+do a quick and dirty one now that could be replaced by something better.
+
 # Webpack Notes
 ## Adjusting 
 The idea is to avoid needing to mess with the filesystem
@@ -107,37 +126,3 @@ to include the wasm asset more neatly?
 
 Is this failing to happen automatically because I have no loader for
 the wasm when I indicate the dependency in the ffi loader?
-
-
-# Useful Webpack Interfaces
-```
-declare interface ModuleFactoryCreateData {
-	contextInfo: ModuleFactoryCreateDataContextInfo;
-	resolveOptions?: ResolveOptions;
-	context: string;
-	dependencies: Dependency[];
-}
-declare interface ModuleFactoryCreateDataContextInfo {
-	issuer: string;
-	issuerLayer?: null | string;
-	compiler: string;
-}
-declare interface ResolveData {
-	contextInfo: ModuleFactoryCreateDataContextInfo;
-	resolveOptions?: ResolveOptions;
-	context: string;
-	request: string;
-	assertions?: Record<string, any>;
-	dependencies: ModuleDependency[];
-	dependencyType: string;
-	createData: Partial<NormalModuleCreateData & { settings: ModuleSettings }>;
-	fileDependencies: LazySet<string>;
-	missingDependencies: LazySet<string>;
-	contextDependencies: LazySet<string>;
-
-	/**
-	 * allow to use the unsafe cache
-	 */
-	cacheable: boolean;
-}
-```

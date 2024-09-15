@@ -55,6 +55,13 @@ common warnings
     ghc-options: -Wall
 
 common deps
+    -- LANGUAGE extensions used by modules in this package.
+    -- TODO: Why aren't these taking effect in the lsp?
+    other-extensions:
+      OverloadedRecordDot,
+      RecordWildCards,
+      BlockArguments,
+      NoFieldSelectors
     -- Other library packages from which modules are imported.
     build-depends:    base ^>=4.20.0.0,
       --th-abstraction >= 0.7.0.0,
@@ -67,6 +74,7 @@ common deps
       prim-uniq >= 0.2,
       primitive >= 0.9,
       optics == 0.4.2.1
+      --extra ^>= 1.7.16
 
 library
     import: warnings, deps
@@ -77,14 +85,8 @@ library
     -- Modules included in this library but not exported.
     other-modules:
       Signal,
-      DependentSlotMap
-
-    -- LANGUAGE extensions used by modules in this package.
-    -- TODO: Why aren't these taking effect in the lsp?
-    other-extensions:
-      OverloadedRecordDot,
-      RecordWildCards,
-      BlockArguments
+      DependentSlotMap,
+      Signal.Graph
 
 
 
