@@ -101,7 +101,8 @@ library
       Signal.Graph,
       View,
       Component,
-      Bind
+      Bind,
+      TestReactive,
 
     -- Directories containing source files.
     hs-source-dirs:   lib
@@ -132,6 +133,9 @@ executable haskell-webgl
     -- was 4.20.0.0 initially but hls complained
     build-depends:    base ^>=4.20.0.0,
       haskell-webgl
+
+    -- Modules included in this library but not exported.
+    other-modules:
 
     -- Directories containing source files.
     hs-source-dirs:   app

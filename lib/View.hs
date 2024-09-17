@@ -17,6 +17,7 @@ newtype AttrName = AttrName String
 
 data TagKind
   = Div
+  | Button
 
 data HtmlAttr = HtmlAttr String
 data HtmlElement

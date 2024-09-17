@@ -1,3 +1,44 @@
+# TODO
+- Finish the View to HtmlElement conversion.
+- Figure out why document fragments get used
+- Finish the ability to watch things. That means I
+  need a way for consumers to have a callback?
+  I think I'd rather instead build it so that only
+  the watchers register a callback.
+- get the ghc-wasm-compat stuff working for better editing
+
+
+## Mixing Signal Reads and Writes
+So we don't want to write to a signal based on a different signal;
+that should be done via computed signals. (Maybe I'll need an escape
+hatch for when it really is simpler?)
+
+Imagine a scenario where we hit one of three endpoints based on a
+user selection, then store the result in a signal. That really
+does mean we need to be able to read and write inside the same
+stuff, huh? Fuck. I can't even really segregate it.
+
+I also was thinking I should make a tool that lets you turn a
+function returning a `CanWrite` or `Reading` into a function
+returning an `IO` inside the `Component` monad, but once I
+switch to all nodes being `IORef`s that'll be trivial.
+
+Let's just get this working now.
+
+## ghc-wasm-compat
+I should be able to simplify the ghc-wasm-compat folder/package
+inside https://github.com/konn/ghc-wasm-earthly/tree/main
+to be used in my code so that haskell language server works when
+I'm using wasm stuff.
+
+Right now the build fails in main because lib/Bind uses the wasm
+module. And it'll also error if I use the javascript ffi, so I
+need the plugin in that as well.
+
+## Memory Leaks!
+There are so many memory leaks in the current implementation that
+uses the map. Soooo many.
+
 # Fine Grained Reactivity in Haskell
 I want to build a system that produces a free monad with
 embeded pieces of reactivity that a runtime system can manage.

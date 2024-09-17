@@ -12,9 +12,20 @@ module Signal.Graph (
   Reading,
   createSignalRuntime,
   SignalRuntimeState,
+  RNKey,
   RwSignal, ComputedSignal,
   readRwSignal, readComputedSignal,
-  modifyRwSignal
+  modifyRwSignal,
+  createRwSignal,
+  createComputedSignal,
+  type Watcher,
+  createWatcher,
+  resetWatcher,
+  IsProducer,
+  ReactiveNodeKind(..),
+  runReading,
+  -- IsConsumer,
+  --consumerDestroy,
 ) where
 
 import Control.Monad (when)
@@ -55,6 +66,8 @@ import Optics.Optic ((%))
 import Optics.Setter (over, set')
 
 runtimeMagic = error "magic integrations with runtime system"
+
+type WatcherNotify = Watcher -> IO ()
 
 cycleDetectedError :: a
 cycleDetectedError = error "A cycle was detected during computation"
@@ -190,7 +203,12 @@ data NodeData (k :: ReactiveNodeKind) (a :: Type) where
       computation :: Reading a
     } ->
     NodeData 'ComputedSignalKind a
-  WatcherData :: NodeData 'WatcherKind Void
+  WatcherData ::
+    { notify :: WatcherNotify
+    -- ^ This is called synchronously when this
+    -- watcher becomes dirty. It should be used
+    -- to schedule future updates.
+    }-> NodeData 'WatcherKind Void
 
 instance LabelOptic "rwValue" A_Lens (NodeData 'RwSignalKind a) (NodeData 'RwSignalKind a) a a where
   labelOptic = lensVL \f signalData@(RwSignalData {..}) ->
@@ -248,6 +266,19 @@ instance
   labelOptic = lensVL \f signalData@(ComputedSignalData {..}) ->
     let g a = signalData {computation = a}
      in g <$> f computation
+
+instance
+  LabelOptic
+    "notify"
+    A_Lens
+    (NodeData 'WatcherKind Void)
+    (NodeData 'WatcherKind Void)
+    (RNKey 'WatcherKind Void -> IO ())
+    (RNKey 'WatcherKind Void -> IO ())
+  where
+  labelOptic = lensVL \f signalData@(WatcherData {..}) ->
+    let g a = signalData {notify = a}
+     in g <$> f notify
 
 -- | A node in the graph of reactive nodes.
 --
@@ -586,11 +617,11 @@ adjustNode SignalRuntimeState {nodeGraph} key f =
 -- equality typeclass to determine if different.
 --
 -- I'll implement a second function that lets you customize equality.
-createRwSignalNode ::
+createRwSignal ::
   forall m a.
   (MonadIO m, Eq a) =>
   SignalRuntimeState -> a -> m (RwSignal a)
-createRwSignalNode SignalRuntimeState {nodeGraph} initialValue = liftIO $ do
+createRwSignal SignalRuntimeState {nodeGraph} initialValue = liftIO $ do
   (key :: Key IO (ReactiveNode 'RwSignalKind a)) <- DSMap.insert node nodeGraph
   pure $ RwSignal key
   where
@@ -604,11 +635,11 @@ createRwSignalNode SignalRuntimeState {nodeGraph} initialValue = liftIO $ do
 -- equality typeclass to determine if different.
 --
 -- I'll implement a second function that lets you customize equality.
-createComputedSignalNode ::
+createComputedSignal ::
   forall m a.
   (MonadIO m, Eq a) =>
   SignalRuntimeState -> Reading a -> m (ComputedSignal a)
-createComputedSignalNode SignalRuntimeState {nodeGraph} computation = liftIO do
+createComputedSignal SignalRuntimeState {nodeGraph} computation = liftIO do
   key <- DSMap.insert node nodeGraph
   pure $ ComputedSignal key
   where
@@ -732,7 +763,7 @@ readComputedSignal signal = do
 -- consumerAfterComputation and producerAccessed.
 runReading ::
   (IsConsumer k, MonadIO m) =>
-  SignalRuntimeState -> RNKey k a -> Reading a -> m a
+  SignalRuntimeState -> RNKey k b -> Reading a -> m a
 runReading runtime activeConsumer m = liftIO do
   let startState =
         ReadingState
@@ -831,6 +862,7 @@ consumerDestroy ::
   SignalRuntimeState -> RNKey k a -> m ()
 consumerDestroy runtime key = error "TODO"
 
+
 consumerMarkDirty :: (IsConsumer k, MonadIO m)
   => SignalRuntimeState -> RNKey k a -> m ()
 consumerMarkDirty runtime signal = do
@@ -838,6 +870,9 @@ consumerMarkDirty runtime signal = do
   node <- viewNode runtime signal
   for_ (asProducer signal) \Witness ->
     producerNotifyConsumers runtime signal
+  case node ^. nodeDataLens of
+    WatcherData {notify} -> liftIO $ notify signal
+    _ -> pure ()
     -- NOTE: this is where the consumerMarkedDirty hook gets
     -- called, which I'll probably need to add in order to
     -- get watchers working?
@@ -856,6 +891,35 @@ modifyRwSignal runtime signal f = liftIO $ do
     (sharedDataLens % #version %~ bumpVersion)
     . (nodeDataLens % #rwValue %~ f)
   modifyIORef' runtime.currentEpoch bumpVersion
+
+-- | Create a watcher that watches a single producer.
+-- 
+-- I'm going with simplified watchers that only
+-- watch one producer. The polyfill is better.
+createWatcher :: (IsProducer p, MonadIO m)
+  => SignalRuntimeState -> RNKey p a -> WatcherNotify -> m Watcher
+createWatcher runtime watched notify = do
+  key <- liftIO $ DSMap.insert node $ runtime.nodeGraph
+  pure $ Watcher key
+  where node = WatcherNode
+          (WatcherData {notify})
+          initialSharedData
+          initialConsumerData
+  
+-- | Allows the watcher to be triggered again.
+--
+-- Is done by setting dirty to 'False'.
+resetWatcher :: (MonadIO m)
+  => SignalRuntimeState -> RNKey p a -> m ()
+resetWatcher runtime watcher = do
+  adjustNode runtime watcher $ sharedDataLens % #dirty .~ False
+
+
+-- TODO: I'm going to need a monad that can read
+-- and write from stuff. I'll call it.. SigTrans?
+-- SignalTrans? Trans? RwTrans? I like RwTrans.
+-- Wait that implies a direct relationship with
+-- read-write signals instead of in general.
 
 {-
 -- | See producerRemoveLiveConsumerAtIndex in graph.ts

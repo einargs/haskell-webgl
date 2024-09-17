@@ -1,4 +1,5 @@
-module Lib (bindRoot, HtmlElement(..), TagKind(..)) where
+module Lib (bindRoot, HtmlElement(..), TagKind(..), setupReactive) where
 
 import View
 import Bind
+import TestReactive
