@@ -44,7 +44,7 @@ function createModule(
 // - but the HMR doesn't realize there's a change.
 export default class HaskellPlugin {
   cabalFile: string;
-  haskellDir: string;
+  haskellDirs: string[];
   debugMode: boolean;
   wasmPath: string;
   cabalPath: string;
@@ -54,14 +54,14 @@ export default class HaskellPlugin {
   virtualModulesPlugin = new VirtualModulesPlugin();
   wp: Watchpack = new Watchpack({
   });
-  constructor({ cabalFile, haskellDir, debugMode, wasmPath }: {
+  constructor({ cabalFile, haskellDirs, debugMode, wasmPath }: {
     cabalFile: string,
-    haskellDir: string,
+    haskellDirs: string[],
     debugMode: boolean,
     wasmPath: string
   }) {
     this.cabalFile = cabalFile;
-    this.haskellDir = haskellDir;
+    this.haskellDirs = haskellDirs;
     this.cabalPath = process.env["WASM_CABAL"] as string;
     this.hasSetup = false;
     this.debugMode = debugMode;
@@ -89,7 +89,7 @@ export default class HaskellPlugin {
           path.resolve(this.cabalFile)
         ],
         directories: [
-          path.resolve(this.haskellDir)
+          ...this.haskellDirs.map(dir => path.resolve(dir))
         ],
         // files assumed to not exist, so no remove
         // event is fired when they aren't there on

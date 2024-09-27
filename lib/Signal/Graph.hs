@@ -24,10 +24,15 @@ module Signal.Graph (
   IsProducer,
   ReactiveNodeKind(..),
   runReading,
+  logSignalState,
+  traceSignalState,
+  producerUpdateValueVersion,
   -- IsConsumer,
   --consumerDestroy,
 ) where
 
+import Data.List qualified as List
+import Debug.Trace qualified as Debug
 import Control.Monad (when)
 import Control.Monad.IO.Class (MonadIO (..))
 import Control.Monad.State.Strict
@@ -110,7 +115,7 @@ data DependencyOnProducer = DependencyOnProducer
   { -- | `Version` of the value last read by a given producer.
     lastReadVersion :: !Version
   }
-  deriving (Generic)
+  deriving (Show, Generic)
 
 type ProducerNodeDeps = Map ProducerId DependencyOnProducer
 
@@ -182,6 +187,7 @@ data ComputedValue a
   = ComputedValue a
   | UnsetValue
   | ComputingValue
+  deriving (Show, Eq, Ord)
 
 -- TODO: replace this with a data/type family indexed on 'ReactiveNodeKind'
 -- so I can auto-derive the lenses.
@@ -462,6 +468,11 @@ data RNKey (k :: ReactiveNodeKind) (a :: Type) where
   ComputedSignal :: Key IO (ReactiveNode 'ComputedSignalKind a) -> RNKey 'ComputedSignalKind a
   Watcher :: Key IO (ReactiveNode 'WatcherKind Void) -> RNKey 'WatcherKind Void
 
+instance Show (RNKey k a) where
+  show (RwSignal key) = "RwSignal " <> show key
+  show (ComputedSignal key) = "ComputedSignal " <> show key
+  show (Watcher key) = "Watcher " <> show key
+
 toBaseKey :: RNKey k a -> Key IO (ReactiveNode k a)
 toBaseKey (RwSignal key) = key
 toBaseKey (ComputedSignal key) = key
@@ -474,6 +485,9 @@ type ComputedSignal = RNKey 'ComputedSignalKind
 type Watcher = RNKey 'WatcherKind Void
 
 data ConsumerId = forall a k. (IsConsumer k) => ConsumerId (RNKey k a)
+
+instance Show ConsumerId where
+  show (ConsumerId key) = show key
 
 instance Eq ConsumerId where
   (ConsumerId a) == (ConsumerId b) = case geq ak bk of
@@ -493,6 +507,9 @@ instance Ord ConsumerId where
       bk = toBaseKey b
 
 data ProducerId = forall a k. (IsProducer k) => ProducerId (RNKey k a)
+
+instance Show ProducerId where
+  show (ProducerId key) = show key
 
 instance Eq ProducerId where
   (ProducerId a) == (ProducerId b) = case geq ak bk of
@@ -646,7 +663,7 @@ createComputedSignal SignalRuntimeState {nodeGraph} computation = liftIO do
     node =
       ComputedSignalNode
         (ComputedSignalData UnsetValue (==) computation)
-        initialSharedData
+        initialSharedData {dirty=True}
         initialProducerData
         initialConsumerData
 
@@ -721,8 +738,9 @@ producerUpdateValueVersion runtime signal = do
   let sharedData = node ^. sharedDataLens
   -- A live consumer will be marked dirty by producers, so a clean
   -- state means that the version is guarenteed to be up to date.
-  let liveAndClean = flip (maybe False) (asConsumer node)
-        \Witness -> consumerIsLive node && not sharedData.dirty
+  let liveAndClean = case asConsumer node of
+        Just Witness -> consumerIsLive node && not sharedData.dirty
+        Nothing -> False
   -- Even non-live consumers can skip polling if they previously
   -- found themselves to be clean at the current epoch, since their
   -- dependencies could not possibly have changed (such a change
@@ -730,8 +748,9 @@ producerUpdateValueVersion runtime signal = do
   let cleanThisEpoch = not sharedData.dirty && sharedData.lastCleanEpoch == currentEpoch
   when (not liveAndClean && not cleanThisEpoch) do
     let mustRecompute = producerMustRecompute node
-    producersChanged <- flip (maybe (pure False)) (asConsumer signal) \Witness ->
-      consumerPollProducersForChange runtime signal
+    producersChanged <- case asConsumer signal of
+      Just Witness -> consumerPollProducersForChange runtime signal
+      Nothing -> pure False
     -- If either the node says we need to recompute or one of the producers
     -- for this node says a producer we depend on has changed, then we
     -- need to recompute.
@@ -863,34 +882,74 @@ consumerDestroy ::
 consumerDestroy runtime key = error "TODO"
 
 
+-- | Mark this consumer as dirty and if it's also a producer
+-- call 'producerNotifyConsumers'.
+--
+-- This also calls 'notify' if the node is a 'Watcher'.
 consumerMarkDirty :: (IsConsumer k, MonadIO m)
   => SignalRuntimeState -> RNKey k a -> m ()
 consumerMarkDirty runtime signal = do
+  Debug.traceM $ "consumer " <> show signal <> " marked as dirty"
   adjustNode runtime signal $ sharedDataLens % #dirty .~ True
   node <- viewNode runtime signal
   for_ (asProducer signal) \Witness ->
     producerNotifyConsumers runtime signal
   case node ^. nodeDataLens of
-    WatcherData {notify} -> liftIO $ notify signal
+    WatcherData {notify} -> do
+      Debug.traceM $ "calling notify for " <> show signal
+      liftIO $ notify signal
     _ -> pure ()
     -- NOTE: this is where the consumerMarkedDirty hook gets
     -- called, which I'll probably need to add in order to
     -- get watchers working?
 
+-- | Propagate a dirty notification to consumers of this
+-- producer.
 producerNotifyConsumers :: (IsProducer k, MonadIO m)
   => SignalRuntimeState -> RNKey k a -> m ()
 producerNotifyConsumers runtime signal = do
+  Debug.traceM $ "producer " <> show signal <> " has chang"
   node <- viewNode runtime signal
   for_ (node ^. producerDataLens % #liveConsumerNodes)
     \(ConsumerId consumer) -> consumerMarkDirty runtime consumer
 
+traceSignalState :: (Show b, MonadIO m) => SignalRuntimeState
+  -> RNKey k a -> Lens' (ReactiveNode k a) b -> m ()
+traceSignalState runtime key l = do
+  node <- viewNode runtime key
+  Debug.traceM $ show key <> " with state " <> show (view l node)
+
+logSignalState :: forall k a m. (Show a, MonadIO m) =>
+  SignalRuntimeState -> RNKey k a -> m ()
+logSignalState runtime key = do
+  node <- viewNode runtime key
+  let t :: Show b => String -> Lens' (ReactiveNode k a) b -> m ()
+      t name l = Debug.traceM $ "  " <> name <> ": " <> show (view l node)
+  Debug.traceM $ "key: " <> show key
+  case node of
+    RwSignalNode{} -> Debug.traceM $ "  value: " <> show (node ^. nodeDataLens % #rwValue)
+    ComputedSignalNode{} -> Debug.traceM $ "  value: " <> show (node ^. nodeDataLens % #cValue)
+    _ -> pure ()
+  t "dirty" $ sharedDataLens % #dirty
+  t "version" $ sharedDataLens % #version
+  for_ (asProducer key) \Witness -> do
+    t "live consumers" $ producerDataLens % #liveConsumerNodes
+  for_ (asConsumer key) \Witness -> do
+    let deps = fmap
+          (\(p, dep) -> show p <> ": lastReadVersion = "
+            <> show dep.lastReadVersion)
+          $ Map.toList $ node ^. consumerDataLens % #producerNodes
+    Debug.traceM $ "  producers: " <> List.intercalate ", " deps
+
 modifyRwSignal :: MonadIO m => SignalRuntimeState ->
   RwSignal a -> (a -> a) -> m ()
 modifyRwSignal runtime signal f = liftIO $ do
+  Debug.traceM $ "modifying signal" <> show signal
   adjustNode runtime signal $
     (sharedDataLens % #version %~ bumpVersion)
     . (nodeDataLens % #rwValue %~ f)
   modifyIORef' runtime.currentEpoch bumpVersion
+  producerNotifyConsumers runtime signal
 
 -- | Create a watcher that watches a single producer.
 -- 
@@ -900,7 +959,9 @@ createWatcher :: (IsProducer p, MonadIO m)
   => SignalRuntimeState -> RNKey p a -> WatcherNotify -> m Watcher
 createWatcher runtime watched notify = do
   key <- liftIO $ DSMap.insert node $ runtime.nodeGraph
-  pure $ Watcher key
+  let watcher = Watcher key
+  adjustNode runtime watched (producerDataLens % #liveConsumerNodes %~ Set.insert (ConsumerId watcher))
+  pure $ watcher
   where node = WatcherNode
           (WatcherData {notify})
           initialSharedData

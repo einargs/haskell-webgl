@@ -78,7 +78,7 @@ export default {
     new IgnorePlugin({ resourceRegExp: /node:timers/ }),
     new HaskellPlugin({
       cabalFile: "haskell-webgl.cabal",
-      haskellDir: "app",
+      haskellDirs: ["app", "lib"],
       debugMode: false,
       wasmPath: path.resolve(WASM_PATH)
     })

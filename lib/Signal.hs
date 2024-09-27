@@ -22,6 +22,8 @@ module Signal (
 import Data.Kind (Type)
 import Control.Monad (void)
 
+import Debug.Trace qualified as Debug
+
 import Control.Monad.IO.Class (MonadIO (..))
 import Control.Monad.Reader (ReaderT, runReaderT, ask)
 
@@ -68,10 +70,18 @@ instance WritableSignal 'RwSignalKind where
     runtime <- ask
     modifyRwSignal runtime signal f
 
-watcherBind :: (ReadableSignal k, IsProducer k)
+watcherBind :: (Show a, ReadableSignal k, IsProducer k)
   => SignalRuntimeState -> RNKey k a -> (a -> IO ()) -> IO Watcher
-watcherBind runtime dep cb =
-  createWatcher runtime dep \watcher -> do
+watcherBind runtime dep cb = do
+  watcher <- createWatcher runtime dep \watcher -> do
+    logSignalState runtime watcher
     val <- runReading runtime watcher (readSignal dep).unReactive
     resetWatcher runtime watcher
+    Debug.traceM $ "after change " <> show watcher
+    logSignalState runtime watcher
     cb val
+  -- We call this to make sure that 'dep' is connected to the producers
+  -- it depends on.
+  _val <- runReading runtime watcher (readSignal dep).unReactive
+  logSignalState runtime dep
+  pure watcher
