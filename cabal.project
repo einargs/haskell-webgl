@@ -1,0 +1,4 @@
+packages:
+  ghc-wasm-compat/ghc-wasm-compat.cabal
+  ./haskell-web.cabal
+
