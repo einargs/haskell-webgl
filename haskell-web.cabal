@@ -88,6 +88,10 @@ common deps
       --ghc-experimental, -- ghc-wasm-compat re-exports GHC.Wasm.Prim
       ghc-wasm-compat
       --extra ^>= 1.7.16
+    if !os(wasi)
+      ghc-options:
+        -fplugin
+        GHC.Wasm.FFI.Plugin
 
 library
     import: warnings, deps

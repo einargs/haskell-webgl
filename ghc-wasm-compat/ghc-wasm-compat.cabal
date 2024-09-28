@@ -3,7 +3,7 @@ name: ghc-wasm-compat
 version: 0.1.0.0
 -- synopsis:
 -- description:
-homepage: https://github.com/konn/ghc-wasm-compat#readme
+homepage: https://github.com/konn/ghc-wasm-earthly#readme
 license: BSD-3-Clause
 license-file: LICENSE
 author: Hiromi ISHII
@@ -30,7 +30,7 @@ library
     -- cabal-gild: discover src-wasm-internal
     other-modules: GHC.Wasm.Compat.Flags
   else
-    build-depends: syb
+    build-depends: syb, template-haskell
     hs-source-dirs:
       src-compat
       src-compat-internal
@@ -46,7 +46,6 @@ library
   default-language: Haskell2010
   build-depends:
     base >=4.7 && <5,
-    template-haskell,
 
   ghc-options:
     -Wall

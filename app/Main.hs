@@ -57,4 +57,5 @@ myMain = do
   -- setInnerText body $ toJSString "hello world"
   pure ()
 
+main :: IO ()
 main = error "not used"
