@@ -1,3 +1,10 @@
+# Current Bug
+- the version isn't updating
+- producerRecomputeValue isn't being called, I think because the
+  value isn't changing.
+- TODO: log the calculation of whether to update in
+  producerUpdateValueVersion.
+- The problem is that `consumerPollProducersForChange` isn't returning True.
 # TODO
 - Finish the View to HtmlElement conversion.
 - Figure out why document fragments get used

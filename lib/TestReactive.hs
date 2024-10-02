@@ -7,7 +7,7 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE NoFieldSelectors #-}
 {-# LANGUAGE ViewPatterns #-}
-module TestReactive (setupReactive) where
+module TestReactive () where
 
 import Control.Monad (void)
 
@@ -15,6 +15,7 @@ import Signal.Graph
 import Signal
 import Debug.Trace qualified as Debug
 
+{-
 -- | Takes a function that sets something on the screen,
 -- and returns a function to call when a button is pressed.
 setupReactive :: (String -> IO ()) -> IO (IO ())
@@ -33,3 +34,4 @@ setupReactive setOutput = do
   pure do
     modifyRwSignal runtime counter (+1)
     logSignalState runtime counter
+-}

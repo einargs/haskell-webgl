@@ -1,6 +1,15 @@
 import { WASI, File, OpenFile, ConsoleStdout, PreopenDirectory } from "@bjorn3/browser_wasi_shim";
 import "./styles.css";
 
+function customLogger(tag) {
+  const decoder = new TextDecoder("utf-8", { fatal: false });
+  let str_buf = "";
+  return new ConsoleStdout((buffer) => {
+    const str = decoder.decode(buffer, {stream:true});
+    if (str.trim()) console.log(`[${tag}] ${str}`);
+  })
+}
+
 function configureWASI() {
   
   let args = ["bin", "arg1", "arg2"];
@@ -8,7 +17,8 @@ function configureWASI() {
   let fds = [
       new OpenFile(new File([])), // stdin
       ConsoleStdout.lineBuffered(msg => console.log(`[WASI stdout] ${msg}`)),
-      ConsoleStdout.lineBuffered(msg => console.warn(`[WASI stderr] ${msg}`)),
+      customLogger("WASI stderr"),
+      //ConsoleStdout.lineBuffered(msg => console.log(`[WASI stderr] ${msg}`)),
       /*new PreopenDirectory(".", [
       ]),*/
   ];

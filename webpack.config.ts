@@ -10,7 +10,7 @@ import HaskellPlugin from "./haskell-plugin.ts";
 // I have no idea how I'm going to make that dynamic.
 //old
 //const WASM_PATH = "dist-newstyle/build/wasm32-wasi/ghc-9.11.20240828/haskell-webgl-0.1.0.0/x/haskell-webgl/opt/build/haskell-webgl/haskell-webgl.wasm";
-const WASM_PATH = "dist-newstyle/build/wasm32-wasi/ghc-9.11.20240828/haskell-webgl-0.1.0.0/x/haskell-webgl/build/haskell-webgl/haskell-webgl.wasm";
+const WASM_PATH = "dist-newstyle/build/wasm32-wasi/ghc-9.11.20240828/haskell-web-0.1.0.0/x/haskell-web/build/haskell-web/haskell-web.wasm";
 
 export default {
   entry: "./src/index.js",

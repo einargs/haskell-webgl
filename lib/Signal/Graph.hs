@@ -25,7 +25,7 @@ module Signal.Graph (
   ReactiveNodeKind(..),
   runReading,
   logSignalState,
-  traceSignalState,
+  SignalDebug(..),
   producerUpdateValueVersion,
   -- IsConsumer,
   --consumerDestroy,
@@ -42,6 +42,7 @@ import Control.Monad.State.Strict
     modify',
     runStateT,
   )
+import Control.Monad.Writer (execWriter, Writer, tell)
 import Data.Functor.Identity (Identity (..))
 import Data.Functor ((<&>))
 import Data.Kind (Type, Constraint)
@@ -406,6 +407,7 @@ instance IsProducer 'ComputedSignalKind where
       ComputedValue _ -> False
   producerRecomputeValue :: forall a. ComputedSignal a -> SignalRuntimeState -> IO ()
   producerRecomputeValue key runtime = do
+    Debug.traceM $ "producerRecomputeValue called for " <> show key
     (node :: ReactiveNode 'ComputedSignalKind a) <- viewNode runtime key
     oldValue <- case node ^. nodeDataLens % #cValue of
       -- computation of this somehow lead to a cyclic read of this.
@@ -715,10 +717,14 @@ consumerPollProducersForChange runtime signal = do
             producerNode <- viewNode runtime producerKey
             pure $ producerNode ^. sharedDataLens % #version
       pVersion <- getProducerVersion
+      Debug.traceM $ "consumerPollProducersForChange " <> show signal
+        <> ": seenVersion = " <> show seenVersion
+        <> ", producerVersion = " <> show pVersion
+        <> ", producer = " <> show producerKey
       -- a mismatch means that the producer's value is known
       -- to have changed since the last time we saw it.
-      if pVersion == seenVersion
-        then pure False
+      if pVersion /= seenVersion
+        then pure True
         else do
           -- The producer's version is the same as the last time we
           -- read it, but it might itself be stale. Force the producer
@@ -746,11 +752,17 @@ producerUpdateValueVersion runtime signal = do
   -- dependencies could not possibly have changed (such a change
   -- would have increased the epoch).
   let cleanThisEpoch = not sharedData.dirty && sharedData.lastCleanEpoch == currentEpoch
+  Debug.traceM $ show signal
+    <> ": cleanThisEpoch = " <> show cleanThisEpoch
+    <> ", liveAndClean = " <> show liveAndClean
   when (not liveAndClean && not cleanThisEpoch) do
     let mustRecompute = producerMustRecompute node
     producersChanged <- case asConsumer signal of
       Just Witness -> consumerPollProducersForChange runtime signal
       Nothing -> pure False
+    Debug.traceM $ show signal
+      <> ": mustRecompute = " <> show mustRecompute
+      <> ", producersChanged = " <> show producersChanged
     -- If either the node says we need to recompute or one of the producers
     -- for this node says a producer we depend on has changed, then we
     -- need to recompute.
@@ -806,6 +818,8 @@ runReading runtime activeConsumer m = liftIO do
   -- we set the current producers of this consumer
   adjustNode runtime activeConsumer $
     consumerDataLens % #producerNodes .~ usedProducers
+  Debug.traceM $ "consumer " <> show activeConsumer
+    <> " read " <> show (Map.keys usedProducers)
 
   -- Then we need to figure out the new producers and
   -- if this consumer is live add it to the live consumer lists
@@ -908,38 +922,59 @@ consumerMarkDirty runtime signal = do
 producerNotifyConsumers :: (IsProducer k, MonadIO m)
   => SignalRuntimeState -> RNKey k a -> m ()
 producerNotifyConsumers runtime signal = do
-  Debug.traceM $ "producer " <> show signal <> " has chang"
   node <- viewNode runtime signal
+  Debug.traceM $ "producer " <> show signal <> " has changed "
+    <> show (node ^. sharedDataLens % #version)
   for_ (node ^. producerDataLens % #liveConsumerNodes)
     \(ConsumerId consumer) -> consumerMarkDirty runtime consumer
 
-traceSignalState :: (Show b, MonadIO m) => SignalRuntimeState
-  -> RNKey k a -> Lens' (ReactiveNode k a) b -> m ()
-traceSignalState runtime key l = do
-  node <- viewNode runtime key
-  Debug.traceM $ show key <> " with state " <> show (view l node)
+class SignalDebug m where
+  logSignal :: (Show a) => RNKey k a -> m ()
+  logSignal = logSignalRaw $ Just show
+  logSignalNoState :: RNKey k a -> m ()
+  logSignalNoState = logSignalRaw Nothing
+  logSignalRaw :: Maybe (a -> String) -> RNKey k a -> m ()
 
-logSignalState :: forall k a m. (Show a, MonadIO m) =>
-  SignalRuntimeState -> RNKey k a -> m ()
-logSignalState runtime key = do
+instance SignalDebug Reading where
+  logSignalRaw mbShow key = do
+    st <- get
+    logSignalState mbShow st.runtime key
+
+logSignalState :: forall k a m. (MonadIO m) =>
+  Maybe (a -> String) -> SignalRuntimeState -> RNKey k a -> m ()
+logSignalState mbShower runtime key = do
   node <- viewNode runtime key
-  let t :: Show b => String -> Lens' (ReactiveNode k a) b -> m ()
-      t name l = Debug.traceM $ "  " <> name <> ": " <> show (view l node)
-  Debug.traceM $ "key: " <> show key
-  case node of
-    RwSignalNode{} -> Debug.traceM $ "  value: " <> show (node ^. nodeDataLens % #rwValue)
-    ComputedSignalNode{} -> Debug.traceM $ "  value: " <> show (node ^. nodeDataLens % #cValue)
-    _ -> pure ()
-  t "dirty" $ sharedDataLens % #dirty
-  t "version" $ sharedDataLens % #version
-  for_ (asProducer key) \Witness -> do
-    t "live consumers" $ producerDataLens % #liveConsumerNodes
-  for_ (asConsumer key) \Witness -> do
-    let deps = fmap
-          (\(p, dep) -> show p <> ": lastReadVersion = "
-            <> show dep.lastReadVersion)
-          $ Map.toList $ node ^. consumerDataLens % #producerNodes
-    Debug.traceM $ "  producers: " <> List.intercalate ", " deps
+  let fieldStrings = fmap format $ execWriter $ gather node
+      keyString = "key: " <> show key <> "\n"
+      format (name,val) = "  " <> name <> ": " <> val <> "\n"
+      output = List.concat $ keyString:fieldStrings
+  Debug.traceM output
+  where
+  field :: String -> String -> Writer [(String,String)] ()
+  field name output = tell [(name,output)]
+  gather :: ReactiveNode k a -> Writer [(String,String)] ()
+  gather node = do
+    let t :: Show b => String -> Lens' (ReactiveNode k a) b -> Writer [(String, String)] ()
+        t name l = field name $ show (view l node)
+    for_ mbShower \shower ->
+      case node of
+        RwSignalNode{} -> field "value" $ shower (node ^. nodeDataLens % #rwValue)
+        ComputedSignalNode{} ->
+          field "value" $ case (node ^. nodeDataLens % #cValue) of
+            ComputingValue -> "computing"
+            UnsetValue -> "unset"
+            ComputedValue v -> shower v
+        _ -> pure ()
+    t "dirty" $ sharedDataLens % #dirty
+    t "version" $ sharedDataLens % #version
+    for_ (asProducer key) \Witness -> do
+      t "live consumers" $ producerDataLens % #liveConsumerNodes
+    for_ (asConsumer key) \Witness -> do
+      let deps = fmap
+            (\(p, dep) -> show p <> ": lastReadVersion = "
+              <> show dep.lastReadVersion)
+            $ Map.toList $ node ^. consumerDataLens % #producerNodes
+      field "producers" $ List.intercalate ", " deps
 
 modifyRwSignal :: MonadIO m => SignalRuntimeState ->
   RwSignal a -> (a -> a) -> m ()
@@ -974,76 +1009,3 @@ resetWatcher :: (MonadIO m)
   => SignalRuntimeState -> RNKey p a -> m ()
 resetWatcher runtime watcher = do
   adjustNode runtime watcher $ sharedDataLens % #dirty .~ False
-
-
--- TODO: I'm going to need a monad that can read
--- and write from stuff. I'll call it.. SigTrans?
--- SignalTrans? Trans? RwTrans? I like RwTrans.
--- Wait that implies a direct relationship with
--- read-write signals instead of in general.
-
-{-
--- | See producerRemoveLiveConsumerAtIndex in graph.ts
---
--- The javascript asserts that the producer is also a consumer, but
--- I don't see any reason to do that here.
-producerRemoveLiveConsumer
-  :: (IsProducer k1, IsConsumer k2)
-  => SignalRuntimeState -> RNKey k1 a -> RNKey k2 b -> IO ()
-producerRemoveLiveConsumer runtime producer consumer = do
-  -- don't need to update the backpointing indexes because we're
-  -- using sets and ids
-  pure ()
-
--- | see graph.ts for implementation of producerAccessed
-producerAccessed :: IsProducer k => ReadingState -> RNKey k a -> IO ()
-producerAccessed reading key = do
-  -- use a hashmap of producer keys to the producer dependency
-  -- info. That way I can also avoid tracking the index.
-  -- and that way I don't do the weird walk through the array.
-  --
-  -- wait, no, I think I do need the index to allow coordination
-  -- across multiple producers for the same consumer?
-  --
-  -- No -- the way this is designed I can always build a list in the
-  -- ReadingMonad of all the producers a consumer depends on.
-  -- So that means I need to write a version of that gets handed
-  -- a set of all the producers at the end of running a read only monad.
-  pure ()
--}
-
-{-
-
--- | Context that can create signals and memos, but can't
--- read or set them.
---
--- Does this need to be a monad? Can I get more interesting
--- stuff by using applicative do.
-newtype CreateOnly a = MkCreateOnly { unCreateOnly :: IO a }
-  deriving (Functor, Applicative)
-
--- The ids go to a slotmap ala leptos that can be
--- mutated to deal with the signal graph.
-
-data ReadSignal a = ReadSignal ReadSignalId
-data WriteSignal a = WriteSignal WriteSignalId
-
-createSignal :: a -> CreateOnly (ReadSignal a, WriteSignal a)
-createSignal defaultValue = runtimeMagic
-
-data TransState = TransState
-
--- | Batch multiple signal updates together.
---
--- Can only mutate signals, not read them. It can do
--- updates that refer to the previous version.
-newtype Transaction a = MkTransaction
-  { unTransaction :: State TransState a }
-  deriving (Functor, Applicative, Monad)
-
-updateSignal :: WriteSignal a -> (a -> a) -> Transaction ()
-updateSignal ws f = runtimeMagic
-
-setSignal :: WriteSignal a -> a -> Transaction ()
-setSignal ws v = runtimeMagic
--}

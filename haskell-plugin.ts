@@ -129,6 +129,9 @@ export default class HaskellPlugin {
         let wasmName = "haskell/haskell.wasm";
         let exists = compilation.getAsset(wasmName);
         console.info("WASM FILE exists=",exists);
+        // TODO: temporary until have better error handling for compilation
+        // failure
+        if (!this.wasmContent) return;
         let source = new RawSource(this.wasmContent as Buffer);
         if (exists) {
           console.log("update wasm asset");
@@ -169,6 +172,10 @@ export default class HaskellPlugin {
     let ffiPath = path.resolve(ffiFileName);
     let wasmFileName = "haskell/haskell.wasm";
     let wasmPath = path.resolve(wasmFileName);
+    // TODO: according to the docs under CopyWebpackPlugin, there is
+    // a writeToDisk option that could be useful? But it just writes
+    // to the disk, it doesn't make the virtual module I want to make.
+    // https://webpack.js.org/plugins/copy-webpack-plugin/
     this.virtualModulesPlugin.writeModule(ffiFileName, ffiContents);
     // I'm hoping this will work despite the plugin being written to use
     // a string instead of a buffer.
@@ -199,8 +206,10 @@ export default class HaskellPlugin {
       await this._buildModules(debug, normalModuleFactory);
       debug("compilation success.");
     } catch (err) {
-      debug("Compilation error", err);
-      throw err;
+      console.error("Compilation error", err);
+      // TODO: I forgot how you hook into the proper webpack error thing. I
+      // think there's some weird workaround that the rust/wasm loader used?
+      //throw err;
     }
   }
 }

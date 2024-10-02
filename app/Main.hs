@@ -12,6 +12,7 @@ module Main (myMain, main) where
 import GHC.Wasm.Prim
 
 import Lib
+import Debug.Trace qualified as Debug
 
 foreign import javascript unsafe "console.log($1)"
   jsLog :: JSString -> IO ()
@@ -34,6 +35,28 @@ clog = jsLog . toJSString
 makeCallback :: IO () -> IO JSVal
 makeCallback act = jsMakeCallback \_ -> act
 
+primaryView :: View
+primaryView = EmbededComponent do
+  count <- rwSignal (0::Int)
+  Debug.traceM $ "count signal key: " <> show count
+  asString <- computedSignal $ show <$> readSignal count
+  Debug.traceM $ "asString signal key: " <> show asString
+  let but = RawHtml Button [] ["click" #=> onClick] [RawText "inc"]
+      out1 = RawHtml Div [] [] [EmbededReactive $ RawText . show <$> readSignal count]
+      out2 = RawHtml Div [] [] [EmbededReactive $ RawText <$> readSignal asString]
+      onClick = do
+        logSignal count
+        logSignal asString
+        modifySignal count \i -> Debug.trace ("clicked " <> show i) $ i+1
+  pure $ RawHtml Div [] [] [but, out1, out2]
+  where
+    
+
+myMain :: IO ()
+myMain = do
+  jsLog (toJSString "thing0")
+  bindRoot "#root" primaryView
+{-
 myMain :: IO ()
 myMain = do
   jsLog (toJSString "thing9")
@@ -56,6 +79,7 @@ myMain = do
   --body <- getBody
   -- setInnerText body $ toJSString "hello world"
   pure ()
+-}
 
 main :: IO ()
 main = error "not used"
