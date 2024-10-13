@@ -4,4 +4,5 @@ dist-newstyle/
 # Where I put the wasm and ffi
 hs-artifacts/
 node_modules/
+blog_post.md
 

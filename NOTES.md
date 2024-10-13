@@ -1,19 +1,41 @@
-# Current Bug
-- the version isn't updating
-- producerRecomputeValue isn't being called, I think because the
-  value isn't changing.
-- TODO: log the calculation of whether to update in
-  producerUpdateValueVersion.
-- The problem is that `consumerPollProducersForChange` isn't returning True.
 # TODO
-- Finish the View to HtmlElement conversion.
-- Figure out why document fragments get used
-- Finish the ability to watch things. That means I
-  need a way for consumers to have a callback?
-  I think I'd rather instead build it so that only
-  the watchers register a callback.
-- get the ghc-wasm-compat stuff working for better editing
+- [ ] Stop using the signal runtime and switch to using
+  `IORef`s.
+- [X] Finish the View to HtmlElement conversion.
+- [ ] Figure out why document fragments get used
+- [X] Finish the ability to watch things. That means I
+      need a way for consumers to have a callback?
+      I think I'd rather instead build it so that only
+      the watchers register a callback.
+- [X] get the ghc-wasm-compat stuff working for better editing
+- [ ] I need some way to do effects
+  - I think I can have an effect function that does an effect with io
+  - but I think I'd also need something that lets me run signal writer
+    code in a callback or whatever? Should I have two CanWrite? One
+    that can only write and one that can do IO as well? No, that won't work
+    because it needs to be able to 
+- [ ] Make the event callbacks take an event. I have notes about that somewhere
+  in the comments -- was an interesting idea about linking the event type to the
+  thing you're listening on.
+- [ ] Check to see if I can remove the extra argument from the `makeCallback`
+  stuff.
+- [ ] Switch from using the custom `Witness` to `Dict` from the
+  constraints-extra library.
 
+## View Brainstorming
+- [ ] better DX for writing views
+  - Miso uses lucid
+- [ ] stopgap: Embed class to handle embedding stuff like raw text and reactive
+  and components.
+- I could make it so that both attributes and children are done inside a monad
+  argument. That way including or not including an attribute is just a matter
+  of using the when function? No, that's a terrible idea, I want dynamic
+  attributes to be dynamic duh.
+
+# Future
+- Embedding a monad into the event callbacks would be cool.
+
+# Haskell Notes
 
 ## Mixing Signal Reads and Writes
 So we don't want to write to a signal based on a different signal;
@@ -66,6 +88,17 @@ Runtime is here: https://docs.rs/leptos_reactive/0.6.15/src/leptos_reactive/runt
 What I should also read up on is the signals proposal -- that will have
 example code and a very well thought out proposition of all the pieces
 you need for fine grained reactivity.
+
+## Checkout SolidJS docs for more reactive thoughts
+They have some cool ideas like an `onCleanup` function that runs when the
+reactive scope is done. Great for stuff like clearing an interval. Leptos has
+this too.
+
+## Synchronous Reactive Programming
+Leptos says that it comes from a Synchronous Reactive Programming tradition.
+
+There's a post (here)[https://ryansolid.medium.com/synchronous-reactive-programming-is-similar-to-digital-circuit-design-7322fd801c91]
+that says SolidJS kind of moved away from this?
 
 ## Haskell design
 We will store various things in flat maps that will own them and allow

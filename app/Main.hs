@@ -37,20 +37,19 @@ makeCallback act = jsMakeCallback \_ -> act
 
 primaryView :: View
 primaryView = EmbededComponent do
-  count <- rwSignal (0::Int)
-  Debug.traceM $ "count signal key: " <> show count
-  asString <- computedSignal $ show <$> readSignal count
+  count1 <- rwSignal (0::Int)
+  count2 <- rwSignal (0::Int)
+  Debug.traceM $ "count1 signal key: " <> show count1
+  Debug.traceM $ "count2 signal key: " <> show count2
+  sum <- computedSignal $ liftA2 (+) (readSignal count1) (readSignal count2)
+  asString <- computedSignal $ show <$> readSignal sum
   Debug.traceM $ "asString signal key: " <> show asString
-  let but = RawHtml Button [] ["click" #=> onClick] [RawText "inc"]
-      out1 = RawHtml Div [] [] [EmbededReactive $ RawText . show <$> readSignal count]
+  let mkBut signal = RawHtml Button [] ["click" #=> onClick signal] [RawText "inc"]
+      out1 = RawHtml Div [] [] [EmbededReactive $ RawText . show <$> readSignal sum]
       out2 = RawHtml Div [] [] [EmbededReactive $ RawText <$> readSignal asString]
-      onClick = do
-        logSignal count
-        logSignal asString
-        modifySignal count \i -> Debug.trace ("clicked " <> show i) $ i+1
-  pure $ RawHtml Div [] [] [but, out1, out2]
-  where
-    
+      onClick signal = do
+        modifySignal signal \i -> Debug.trace (show signal <> " clicked " <> show i) $ i+1
+  pure $ RawHtml Div [] [] [mkBut count1, mkBut count2, out1, out2]
 
 myMain :: IO ()
 myMain = do
