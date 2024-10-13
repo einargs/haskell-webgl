@@ -20,7 +20,7 @@
 - [ ] Check to see if I can remove the extra argument from the `makeCallback`
   stuff.
 - [ ] Switch from using the custom `Witness` to `Dict` from the
-  constraints-extra library.
+  constraints library.
 
 ## View Brainstorming
 - [ ] better DX for writing views
