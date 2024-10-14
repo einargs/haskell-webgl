@@ -22,6 +22,21 @@
 - [ ] Switch from using the custom `Witness` to `Dict` from the
   constraints library.
 
+## Important Features
+- [ ] `effect` wrapper for doing side-effects.
+- [ ] Figure out networking
+- [ ] Do I need keys for lists? Check leptos
+- [ ] What do I do if embedded reactive view returns the same component?
+- [ ] Better DSL.
+  - I don't think I can use template haskell right now, but
+    does the JSaddle stuff for miso uses template haskell?
+
+### Maybe
+- [ ] Escape hatch for reading values? Actually, an escape hatch for running
+  your own reactive computation wouldn't be bad necessarily, right?
+- [ ] Escape hatch for updating values? I think that's necessary for the `effect`
+  wrapper, right?
+
 ## View Brainstorming
 - [ ] better DX for writing views
   - Miso uses lucid
